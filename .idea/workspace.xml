@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="59796dff-b64f-4832-9872-fbdcf97004d3" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/source/_posts/hello-world.md" beforeDir="false" afterPath="$PROJECT_DIR$/source/_posts/hello-world.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -63,30 +63,43 @@
       <updated>1620899463164</updated>
       <workItem from="1620899465393" duration="14061000" />
       <workItem from="1620979234444" duration="144000" />
+      <workItem from="1620982565381" duration="447000" />
     </task>
+    <task id="LOCAL-00001" summary="test">
+      <created>1620982588509</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1620982588509</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="1" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="test" />
+    <option name="LAST_COMMIT_MESSAGE" value="test" />
   </component>
   <component name="WindowStateProjectService">
     <state x="442" y="291" key="#com.intellij.fileTypes.FileTypeChooser" timestamp="1620955538358">
       <screen x="0" y="23" width="1440" height="822" />
     </state>
     <state x="442" y="291" key="#com.intellij.fileTypes.FileTypeChooser/0.23.1440.822/1440.23.1920.1057@0.23.1440.822" timestamp="1620955538358" />
-    <state x="1848" y="172" key="CommitChangelistDialog2" timestamp="1620979406691">
+    <state x="1848" y="172" key="CommitChangelistDialog2" timestamp="1620982588370">
       <screen x="1440" y="23" width="1920" height="1057" />
     </state>
     <state x="306" y="139" key="CommitChangelistDialog2/0.23.1440.822/1440.23.1920.1057@0.23.1440.822" timestamp="1620962743235" />
-    <state x="1848" y="172" key="CommitChangelistDialog2/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620979406691" />
+    <state x="1848" y="172" key="CommitChangelistDialog2/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620982588370" />
     <state x="1661" y="132" key="DiffContextDialog" timestamp="1620979390258">
       <screen x="1440" y="23" width="1920" height="1057" />
     </state>
     <state x="1661" y="132" key="DiffContextDialog/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620979390258" />
-    <state x="2136" y="217" key="Vcs.Push.Dialog.v2" timestamp="1620979408930">
+    <state x="2136" y="217" key="Vcs.Push.Dialog.v2" timestamp="1620982590970">
       <screen x="1440" y="23" width="1920" height="1057" />
     </state>
-    <state x="2136" y="217" key="Vcs.Push.Dialog.v2/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620979408930" />
+    <state x="2136" y="217" key="Vcs.Push.Dialog.v2/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620982590970" />
     <state x="1957" y="245" width="894" height="625" key="find.popup" timestamp="1620979344302">
       <screen x="1440" y="23" width="1920" height="1057" />
     </state>
