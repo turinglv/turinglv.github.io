@@ -2,17 +2,26 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="59796dff-b64f-4832-9872-fbdcf97004d3" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/.travis.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/push_master.sh" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/themes/next/source/images/avatar.jpeg" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/themes/next/_config.yml" beforeDir="false" afterPath="$PROJECT_DIR$/themes/next/_config.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/source/_posts/hello-world.md" beforeDir="false" afterPath="$PROJECT_DIR$/source/_posts/hello-world.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="DatabaseView">
+    <option name="SHOW_INTERMEDIATE" value="true" />
+    <option name="GROUP_DATA_SOURCES" value="true" />
+    <option name="GROUP_SCHEMA" value="true" />
+    <option name="GROUP_CONTENTS" value="false" />
+    <option name="SORT_POSITIONED" value="false" />
+    <option name="SHOW_EMPTY_GROUPS" value="false" />
+    <option name="AUTO_SCROLL_FROM_SOURCE" value="false" />
+    <option name="HIDDEN_KINDS">
+      <set />
+    </option>
+    <expand />
+    <select />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -26,6 +35,7 @@
     <option name="showLibraryContents" value="true" />
   </component>
   <component name="PropertiesComponent">
+    <property name="GO_FMT" value="true" />
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="aspect.path.notification.shown" value="true" />
@@ -52,6 +62,7 @@
       <option name="presentableId" value="Default" />
       <updated>1620899463164</updated>
       <workItem from="1620899465393" duration="14061000" />
+      <workItem from="1620979234444" duration="144000" />
     </task>
     <servers />
   </component>
@@ -63,14 +74,23 @@
       <screen x="0" y="23" width="1440" height="822" />
     </state>
     <state x="442" y="291" key="#com.intellij.fileTypes.FileTypeChooser/0.23.1440.822/1440.23.1920.1057@0.23.1440.822" timestamp="1620955538358" />
-    <state x="1848" y="172" key="CommitChangelistDialog2" timestamp="1620977423213">
+    <state x="1848" y="172" key="CommitChangelistDialog2" timestamp="1620979406691">
       <screen x="1440" y="23" width="1920" height="1057" />
     </state>
     <state x="306" y="139" key="CommitChangelistDialog2/0.23.1440.822/1440.23.1920.1057@0.23.1440.822" timestamp="1620962743235" />
-    <state x="1848" y="172" key="CommitChangelistDialog2/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620977423213" />
-    <state x="388" y="196" width="670" height="486" key="find.popup" timestamp="1620957526973">
-      <screen x="0" y="23" width="1440" height="822" />
+    <state x="1848" y="172" key="CommitChangelistDialog2/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620979406691" />
+    <state x="1661" y="132" key="DiffContextDialog" timestamp="1620979390258">
+      <screen x="1440" y="23" width="1920" height="1057" />
+    </state>
+    <state x="1661" y="132" key="DiffContextDialog/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620979390258" />
+    <state x="2136" y="217" key="Vcs.Push.Dialog.v2" timestamp="1620979408930">
+      <screen x="1440" y="23" width="1920" height="1057" />
+    </state>
+    <state x="2136" y="217" key="Vcs.Push.Dialog.v2/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620979408930" />
+    <state x="1957" y="245" width="894" height="625" key="find.popup" timestamp="1620979344302">
+      <screen x="1440" y="23" width="1920" height="1057" />
     </state>
     <state x="388" y="196" width="670" height="486" key="find.popup/0.23.1440.822/1440.23.1920.1057@0.23.1440.822" timestamp="1620957526973" />
+    <state x="1957" y="245" width="894" height="625" key="find.popup/0.23.1440.822/1440.23.1920.1057@1440.23.1920.1057" timestamp="1620979344302" />
   </component>
 </project>
