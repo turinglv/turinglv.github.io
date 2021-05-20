@@ -19,7 +19,7 @@ mysql> select * from T where ID=10;
 
 ## 基本架构
 
-<img src="/images/mysql-基础架构/mysql-architecture-20210517110625157.png" alt="img" style="zoom:28%;" />
+<img src="/images/mysql-base/mysql-architecture-20210517110625157.png" alt="img" style="zoom:28%;" />
 
 
 
