@@ -1,5 +1,5 @@
 ---
-title: MySQL -- redolog&&binlog
+title: MySQL -- redolog & binlog
 date: 2020-01-05
 categories:
     - Storage
@@ -216,25 +216,15 @@ mysql> SHOW VARIABLES LIKE '%sync_binlog%';
     - binlog可能由于**磁盘原因**，在**日志中间**出错，MySQL可以通过校验checksum来发现
 
 ### 异常点说明
-
 - 时刻A
-
   - 属于判断规则 2(b) 情况
   - **redolog处于prepare阶段**，**binlog未写成功**，在崩溃恢复时，事务**回滚**
   - 由于binlog未写成功，所以无法传播给从库或异架数据库
-
 - 时刻B
-
   - 属于判断规则 2(a) 情况，事务提交
-
   - **redolog处于prepare阶段**，**binlog写成功**，在崩溃恢复时，事务**提交**
-
   - 由于binlog写成功，所以可以传播给从库或异架数据库，数据保持一致
-
     思考：为何MySQL这么设计？
-
     - binlog 写完以后 MySQL 发生崩溃，这时候 binlog 已经写入了，之后就会被从库（或者用这个 binlog 恢复出来的库）使用。所以，在主库上也要提交这个事务。采用这个策略，主库和备库的数据就保证了一致性。
-
 ### 参考资料
-
 《MySQL实战45讲》
