@@ -226,5 +226,6 @@ mysql> SHOW VARIABLES LIKE '%sync_binlog%';
   - 由于binlog写成功，所以可以传播给从库或异架数据库，数据保持一致
     思考：为何MySQL这么设计？
     - binlog 写完以后 MySQL 发生崩溃，这时候 binlog 已经写入了，之后就会被从库（或者用这个 binlog 恢复出来的库）使用。所以，在主库上也要提交这个事务。采用这个策略，主库和备库的数据就保证了一致性。
+
 ### 参考资料
 《MySQL实战45讲》
