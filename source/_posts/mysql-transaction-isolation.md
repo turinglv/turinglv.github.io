@@ -232,3 +232,94 @@ INSERT INTO t (id, k) VALUES (1,1), (2,2);
 - 对于RC，查询只承认**语句启动前**就已经提交的数据
 
 <img src="/images/mysql-transaction-isolation/mysql-innodb-trx-rc-20210606162844432.png" alt="img" style="zoom:50%;" />
+
+## 多版本
+
+变更记录：1->2->3->4
+
+<img src="/images/mysql-transaction-isolation/mysql-read-view.png" alt="img" style="zoom:50%;" />
+
+1. 当前值为4，但在查询这条记录的时候，**不同时刻启动的事务会有不同的视图**
+2. 在视图A、B和C，这一个记录的值分别是1、2和4
+3. 同一条记录在系统中可以存在多个版本，这就是**MVCC**（**多版本并发控制**）
+4. 对于视图A，要得到1，必须
+   将当前值依次执行图中的所有回滚操作
+   - 这会存在一定的**性能开销**
+   - 这里的视图是**逻辑视图**，**并不是快照**
+   - 这里的视图是InnoDB（**存储引擎层**）的read-view，也不是Server层都VIEW（虚表）
+5. 即使此时有另外一个事务正在将4改成5，这个事务跟视图A、B和C所对应的事务并不冲突
+
+### 删除回滚段
+
+1. **当没有事务需要用到这些回滚段时**，回滚段就会被删除
+2. 不被事务所需要的回滚段：**比系统中最早视图还要早的回滚段**
+
+### 长事务
+
+1. 长事务意味着系统里面存在**很老的事务视图**
+2. 长事务随时可能访问数据库里面的任何数据，在这个事务提交之前，它
+   可能用到的回滚段都必须保留
+   - 因此这会导致**占用大量的存储空间**
+   - <= MySQL5.5，回滚段跟数据字典一起放在**ibdata**文件里，即使长事务最终提交，回滚段被清理，**文件也不会变小**
+3. RC隔离级别一般不会导致回滚段过长的问题
+
+```sql
+# 查询持续时间超过60s的事务
+mysql> select * from information_schema.innodb_trx where TIME_TO_SEC(timediff(now(),trx_started))>60;
+```
+
+## 事务的启动方式
+
+1. 启动方式
+   - 显式启动事务，**begin(start transaction) + commit/rollback**
+   - set autocommit=0 + commit/rollback
+     - set autocommit=0：关闭自动提交
+     - 一些客户端框架会在默认连接成功后执行set autocommit=0，导致**接下来的查询都在事务中**
+     - 如果是**长连接**，就会导致**意外的长事务**
+2. 推荐方式
+   - ***set autocommit=1 + begin(start transaction) + commit/rollback***
+   - set autocommit=1 + begin(start transaction) + (commit and chain)/(rollback and chain)
+     - 适用于频繁使用事务的业务
+     - 省去再次执行begin语句的开销
+     - 从程序开发的角度能够明确地知道每个语句是否处于事务中
+
+## 避免长事务的方案
+
+### 应用开发端
+
+1. 确保**set autocommit=1**，可以通过**general_log**来确认
+2. 确认程序中是否有**不必要的只读事务**
+3. 业务连接数据库的时候，预估**每个语句执行的最长时间**（**max_execution_time**）
+
+```sql
+mysql> SHOW VARIABLES LIKE '%general_log%';
++------------------+-----------------------------------------------+
+| Variable_name    | Value                                         |
++------------------+-----------------------------------------------+
+| general_log      | OFF                                           |
+| general_log_file | /data_db3/mysql/3323/data/ym_DB_12_100071.log |
++------------------+-----------------------------------------------+
+```
+
+```sql
+# Introduced 5.7.8
+# 0 -> disable
+mysql> SHOW VARIABLES LIKE '%max_execution_time%';
++--------------------+-------+
+| Variable_name      | Value |
++--------------------+-------+
+| max_execution_time | 0     |
++--------------------+-------+
+```
+
+### 数据库端
+
+1. 监控**information_schema.innodb_trx**，设置长事务阈值，告警或者Kill（工具：pt-kill）
+2. 在业务功能的测试阶段要求输出所有的general_log，分析日志行为并提前发现问题
+
+## 参考资料
+
+《MySQL实战45讲》
+
+http://zhongmingmao.me/2019/01/16/mysql-transaction-isolation/
+
