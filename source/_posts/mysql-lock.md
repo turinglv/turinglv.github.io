@@ -371,6 +371,10 @@ MySQL 后面的版本可能会改变加锁策略，所以这个规则只限于�
 优化 2：索引上的等值查询，向右遍历时且最后一个值不满足等值条件的时候，next-key lock 退化为间隙锁。
 一个 bug：唯一索引上的范围查询会访问到不满足条件的第一个值为止。
 
+优化及回滚策略：
+1. 锁是**一个一个**加的，为了避免死锁，对**同一组资源**，尽量按照**相同的顺序**访问
+2. 在发生死锁的时候，`FOR UPDATE`占用的资源更多，**回滚成本更大**，因此选择回滚`LOCK IN SHARE MODE`
+
 ### 锁兼容列表
 
 | 是否兼容             | gap    | insert intention | record | next-key |
@@ -395,37 +399,170 @@ CREATE TABLE `t` (
   UNIQUE KEY `d` (`d`)
 ) ENGINE=InnoDB;
 
-insert into t values(0,0,0,0,0),(5,5,5,5,5),
-(10,10,10,10,10),(15,15,15,15,15),(20,20,20,20,20),(25,25,25,25,25);
+insert into t values(0,0,0,0),(5,5,5,5),
+(10,10,10,10),(15,15,15,15),(20,20,20,20),(25,25,25,25);
 ```
 
 ### 加锁分析
 
-#### 主键查询
+#### 唯一索引
 
-```sql
-begin;
-select * from t where id = 10 for update;
-```
-RC：id = 10这条数据行锁
-RR：id = 10这条数据行锁
+1. 等值查询：命中降级成 Row Lock
 
-#### 唯一索引查询
-```sql
-begin;
-select * from t where d = 10 for update;
-```
-RC：在d 二级索引上加锁 id = 10上加锁
-RR：在d 二级索引上加锁 id = 10上加锁
+   | session A                                    | session B                                           | session C                                       |
+   | :------------------------------------------- | :-------------------------------------------------- | :---------------------------------------------- |
+   | BEGIN; <br />UPDATE t SET d=d+1 WHERE id=10; |                                                     |                                                 |
+   |                                              | INSERT INTO t VALUES(1,1,1,1); <br />(Query OK)     |                                                 |
+   |                                              | INSERT INTO t VALUES(16,16,16,16); <br />(Query OK) |                                                 |
+   |                                              |                                                     | UPDATE t SET d=d+1 WHERE id=5; <br />(Query OK) |
+   |                                              |                                                     | UPDATE t SET d=d+1 WHERE id=10; <br />(Blocked) |
 
-#### 不唯一索引查询
+   session A持有的锁：`PRIMARY:X Lock:10`
 
-```sql
-begin;
-select * from t where c = 10 for update;
-```
-RC：满足c = 10的二级索引上加锁 以及对应的主键索引上加锁
-RR：索引c上  (5,10],(10,15)
+2. 等值查询：不命中降级（**Next-Key Lock降级为Gap Lock**）
+
+   | session A                                   | session B                                       | session C                                        |
+   | :------------------------------------------ | :---------------------------------------------- | :----------------------------------------------- |
+   | BEGIN; <br />UPDATE t SET d=d+1 WHERE id=7; |                                                 |                                                  |
+   |                                             | INSERT INTO t VALUES(1,1,1,1); <br />(Query OK) |                                                  |
+   |                                             | INSERT INTO t VALUES(8,8,8,8);<br />(Blocked)   |                                                  |
+   |                                             |                                                 | UPDATE t SET d=d+1 WHERE id=5;<br />(Query OK)   |
+   |                                             |                                                 | UPDATE t SET d=d+1 WHERE id=10; <br />(Query OK) |
+
+   ```sql
+   -- session B Blocked
+   mysql> SELECT locked_index,locked_type,waiting_lock_mode,blocking_lock_mode FROM sys.innodb_lock_waits WHERE locked_table='`test`.`t`';
+   +--------------+-------------+-------------------+--------------------+
+   | locked_index | locked_type | waiting_lock_mode | blocking_lock_mode |
+   +--------------+-------------+-------------------+--------------------+
+   | PRIMARY      | RECORD      | X,GAP             | X,GAP              |
+   +--------------+-------------+-------------------+--------------------+
+   ```
+
+   session A持有的锁：`PRIMARY:Gap Lock:(5,10)`
+
+3. 范围查询 – 起点降级（**Next-Key Lock降级为Row Lock**）
+
+   | session A                                                    | session B                                        | session C                                 |
+   | :----------------------------------------------------------- | :----------------------------------------------- | :---------------------------------------- |
+   | BEGIN; <br />SELECT * FROM t WHERE id>=10 AND id<11 FOR UPDATE; |                                                  |                                           |
+   |                                                              | INSERT INTO t VALUES (8,8,8,8); <br />(Query OK) |                                           |
+   |                                                              | INSERT INTO t VALUES (13,13,13,13); (Blocked)    |                                           |
+   |                                                              |                                                  | UPDATE t SET d=d+1 WHERE id=10; (Blocked) |
+   |                                                              |                                                  | UPDATE t SET d=d+1 WHERE id=15; (Blocked) |
+
+   条件会拆分成`=10`（`Row Lock`）和`>10 & <11`，session A持有的锁：`PRIMARY:X Lock:10`+`PRIMARY:Next-Key Lock:(10,15]`
+
+4. 范围查询 – 尾点延伸 （直到遍历到**第一个不满足的值**为止）
+
+   | session A                                                    | session B                                     | session C                                 |
+   | :----------------------------------------------------------- | :-------------------------------------------- | :---------------------------------------- |
+   | BEGIN;<br />SELECT * FROM t WHERE id>10 AND id<=15 FOR UPDATE; |                                               |                                           |
+   |                                                              | INSERT INTO t VALUES (16,16,16,16); (Blocked) |                                           |
+   |                                                              |                                               | UPDATE t SET d=d+1 WHERE id=20; (Blocked) |
+
+   session A持有的锁：`PRIMARY:Next-Key Lock:(10,15]`+`PRIMARY:Next-Key Lock:(15,20]`
+
+#### 不唯一索引
+
+1. 等值查询 – LOCK IN SHARE MODE
+
+   | session A                                                   | session B                                       | session C                                       |
+   | :---------------------------------------------------------- | :---------------------------------------------- | :---------------------------------------------- |
+   | BEGIN; <br />SELECT id FROM t WHERE c=5 LOCK IN SHARE MODE; |                                                 |                                                 |
+   |                                                             | INSERT INTO t VALUES (7,7,7,7); <br />(Blocked) |                                                 |
+   |                                                             |                                                 | UPDATE t SET d=d+1 WHERE id=5;<br /> (Query OK) |
+   |                                                             |                                                 | UPDATE t SET d=d+1 WHERE c=10;<br /> (Query OK) |
+
+   session A用到了索引覆盖（只查询主键id），并且是加 s锁，所以无需回表对主键id加锁，加锁如下：
+   session A持有的锁：`c:Next-Key Lock:(0,5]`+`c:Gap Lock:(5,10)`
+
+2. 等值查询 – FOR UPDATE
+
+   | session A                                           | session B                                      |
+   | :-------------------------------------------------- | :--------------------------------------------- |
+   | BEGIN; <br />SELECT id FROM t WHERE c=5 FOR UPDATE; |                                                |
+   |                                                     | UPDATE t SET d=d+1 WHERE id=5; <br />(Blocked) |
+
+   上一个例子中`LOCK IN SHARE MODE`只会锁住**覆盖索引**，而`FOR UPDATE`会同时给**聚簇索引**上**满足条件的行**加上**X Lock**，加锁如下：
+   session A持有的锁：`c:Next-Key Lock:(0,5]`+`c:Gap Lock:(5,10)`+`PRIMARY:X Lock:5`
+
+3. 等值查询 – 绕过覆盖索引
+
+   | session A                                                 | session B                                      |
+   | :-------------------------------------------------------- | :--------------------------------------------- |
+   | BEGIN; <br />SELECT d FROM t WHERE c=5 LOCK IN SHARE MODE |                                                |
+   |                                                           | UPDATE t SET d=d+1 WHERE id=5;<br /> (Blocked) |
+
+   无法利用覆盖索引，就必须**回表**，与上面`FOR UPDATE`的情况一致，加锁如下：
+   session A持有的锁：`c:Next-Key Lock:(0,5]`+`c:Gap Lock:(5,10)`+`PRIMARY:S Lock:5`
+
+4. 等值查询 – 相同的值
+
+   ```sql
+   -- c=10有两行，两行之间也存在Gap
+   INSERT INTO t VALUES (30,10,30,30);
+   ```
+
+   <img src="/images/mysql-lock//image-20210908144035137.png" alt="image-20210908144035137" style="zoom:80%;" />
+
+   | session A                              | session B                                        | session C                                        |
+   | :------------------------------------- | :----------------------------------------------- | :----------------------------------------------- |
+   | BEGIN; <br />DELETE FROM t WHERE c=10; |                                                  |                                                  |
+   |                                        | INSERT INTO t VALUES (12,12,12); <br />(Blocked) |                                                  |
+   |                                        |                                                  | UPDATE t SET d=d+1 WHERE c=5;<br />(Query OK)    |
+   |                                        |                                                  | UPDATE t SET d=d+1 WHERE c=15;<br />(Query OK)   |
+   |                                        |                                                  | UPDATE t SET d=d+1 WHERE id=5; <br />(Query OK)  |
+   |                                        |                                                  | UPDATE t SET d=d+1 WHERE id=15; <br />(Query OK) |
+   |                                        |                                                  | UPDATE t SET d=d+1 WHERE id=10; <br />(Blocked)  |
+   |                                        |                                                  | UPDATE t SET d=d+1 WHERE id=30;<br />(Blocked)   |
+
+   <img src="/images/mysql-lock//image-20210908144122524.png" alt="image-20210908144122524" style="zoom:80%;" />
+
+   session A持有的锁
+
+   - `c:Next-Key Lock:((c=5,id=5),(c=10,id=10)]`+`c:Gap Lock:((c=10,id=10),(c=15,id=15))`
+   - `PRIMARY:X Lock:10`+`PRIMARY:X Lock:30`
+
+5. 等值查询 – LIMIT
+
+   ```sql
+   -- 与上面“相同的值”一样
+   INSERT INTO t VALUES (30,10,30,30);
+   ```
+
+   | session A                                      | session B                                           | session C                                      |
+   | :--------------------------------------------- | :-------------------------------------------------- | :--------------------------------------------- |
+   | BEGIN; <br />DELETE FROM t WHERE c=10 LIMIT 2; |                                                     |                                                |
+   |                                                | INSERT INTO t VALUES (12,12,12,12);<br />(Query OK) |                                                |
+   |                                                |                                                     | UPDATE t SET d=d+1 WHERE id=10;<br />(Blocked) |
+   |                                                |                                                     | UPDATE t SET d=d+1 WHERE id=30;<br />(Blocked) |
+
+   在遍历到`(c=10,id=30)`这一行记录后，已经有两行记录满足条件，**循环结束**，session A在二级索引c上的加锁效果如下所示
+
+   <img src="/images/mysql-lock//image-20210908151745952.png" alt="image-20210908151745952" style="zoom:90%;" />
+
+   session A持有的锁
+
+   - `c:Next-Key Lock:((c=5,id=5),(c=10,id=10)]`+`c:Next-Key Lock:((c=10,id=10),(c=10,id=30)]`
+   - `PRIMARY:X Lock:10`+`PRIMARY:X Lock:30`
+
+   因此在删除数据时，尽量加上`LIMIT`，可以**控制删除数据的条数**，也可以**减少加锁的范围**
+
+6. 范围查询
+
+   | session A                                                    | session B                                 | session C                                 |
+   | :----------------------------------------------------------- | :---------------------------------------- | :---------------------------------------- |
+   | BEGIN; <br />SELECT * FROM t WHERE c>=10 AND c<11 FOR UPDATE; |                                           |                                           |
+   |                                                              | INSERT INTO t VALUES (8,8,8,8); (Blocked) |                                           |
+   |                                                              |                                           | UPDATE t SET d=d+1 WHERE id=10; (Blocked) |
+   |                                                              |                                           | UPDATE t SET d=d+1 WHERE c=15; (Blocked)  |
+
+   由于二级索引`c`是**非唯一索引**，因此没法降级为**行锁**
+   session A持有的锁
+
+   - `c:Next-Key Lock:(5,10]`+`c:Next-Key Lock:(10,15]`
+   - `PRIMARY:X Lock:10`
 
 #### 无索引查询
 
@@ -438,37 +575,88 @@ RC：对所有记录加 Record Lock 再释放不匹配的记录锁
 - 对于 READ COMMITTED，MySQL 在扫描结束后，会违反上条原则，释放 WHERE 条件不满足的记录锁
 RR：通过聚簇索引，逐行扫描，逐行加锁，且索引前后都要加 Gap Lock，事务提交后统一释放锁
 
-#### 范围查询
+#### ORDER BY DESC
+
+| session A                                                    | session B                                       |
+| :----------------------------------------------------------- | :---------------------------------------------- |
+| BEGIN;<br />SELECT * FROM t WHERE c>=15 AND c <=20 ORDER BY c DESC LOCK IN SHARE MODE; |                                                 |
+|                                                              | INSERT INTO t VALUES (6,6,6);<br />(Blocked)    |
+|                                                              | INSERT INTO t VALUES (21,21,21);<br />(Blocked) |
+|                                                              | UPDATE t SET d=d+1 WHERE id=10;<br />(Query OK) |
+|                                                              | UPDATE t SET d=d+1 WHERE id=25;<br />(Query OK) |
+|                                                              | UPDATE t SET d=d+1 WHERE id=15;<br />(Blocked)  |
+|                                                              | UPDATE t SET d=d+1 WHERE id=20;<br />(Blocked)  |
+
+1. `ORDE BY DESC`，首先找到第一个满足`c=20`的行，session A持有锁：`c:Next-Key Lock:(15,20]`
+2. 由于二级索引`c`是**非唯一索引**，继续向**右**遍历，session A持有锁：`c:Gap Key Lock:(20,25)`
+3. 向**左**遍历，`c=15`，session A持有锁：`c:Next-Key Lock:(10,15]`
+4. 继续向**左**遍历，`c=10`，session A持有锁：`c:Next-Key Lock:(5,10]`
+5. 上述过程中，满足条件的主键为`id=15`和`id=20`，session A持有**聚簇索引**上对应行的`S Lock`
+6. 总结，session A持有的锁
+   - `c:Next-Key Lock:(5,10]`+`c:Next-Key Lock:(10,15]`+`c:Next-Key Lock:(15,20]`+`c:Gap Key Lock:(20,25)`
+   - `PRIMARY:S Lock:15`+`PRIMARY:S Lock:20`
+
+#### 等值 VS 遍历
 
 ```sql
-begin;
-select * from t where id>9 and id<12 order by id desc for update;
+BEGIN;
+SELECT * FROM t WHERE id>12 AND id<18 ORDER BY id DESC FOR UPDATE;
 ```
-加锁范围 (5,10] next-key lock、(10,15) gap lock
 
-id=15 这一行，并没有被加上行锁：用到了优化 2，即索引上的等值查询，向右遍历的时候 id=15 不满足条件，所以 next-key lock 退化为了间隙锁 (10, 15)
+1. 利用上面的加锁规则，加锁范围如下
+   - `PRIMARY:Next-Key Lock:(5,10]`
+   - `PRIMARY:Next-Key Lock:(5,15]`
+   - `PRIMARY:Gap Lock:(15,20)`
+2. 加锁动作是发生在语句执行过程中
+   - `ORDER BY DESC`，优化器必须先找到**第一个id<18的值**
+   - 这个过程是通过**索引树的搜索过程**得到的，其实是在引擎内部查找`id=18`
+   - 只是最终没找到，而找到了`(15,20)`这个间隙
+   - 然后**向左遍历**，在这个遍历过程，就不是等值查询了
+   - 会扫描到 id=10 这一行，所以会加一个 next-key lock (5,10]
+3. 在执行过程中，通过**树搜索**的方式定位记录的过程，用的是**等值查询**
 
-过程分析：
-
-1. 首先这个查询语句的语义是 order by id desc，要拿到满足条件的所有行，优化器必须先找到“第一个 id<12 的值”。
-2. 这个过程是通过索引树的搜索过程得到的，在引擎内部，其实是要找到 id=12 的这个值，只是最终没找到，但找到了 (10,15) 这个间隙。
-3. 然后向左遍历，在遍历过程中，就不是等值查询了，会扫描到 id=5 这一行，所以会加一个 next-key lock (0,5]。
+#### IN
 
 ```sql
-begin;
-select * from t where id>9 and id<12 order by id asc for update;
+BEGIN;
+SELECT id FROM t WHERE c IN (5,20,10) LOCK IN SHARE MODE;
+
+-- Using index：使用了覆盖索引
+-- key=c：使用了索引c
+-- rows=3：三个值都是通过树搜索定位的
+mysql> EXPLAIN SELECT id FROM t WHERE c IN (5,20,10) LOCK IN SHARE MODE;
++----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+--------------------------+
+| id | select_type | table | partitions | type  | possible_keys | key  | key_len | ref  | rows | filtered | Extra                    |
++----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+--------------------------+
+|  1 | SIMPLE      | t     | NULL       | range | c             | c    | 5       | NULL |    3 |   100.00 | Using where; Using index |
++----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+--------------------------
 ```
 
-加锁范围 (5,10] next-key lock、(10,15] gap lock
+- 查找c=5：`c:Next-Key Lock:(0,5]`+`c:Gap Lock:(5,10)`
 
-#### 等值查询
+- 查找c=10：`c:Next-Key Lock:(5,10]`+`c:Gap Lock:(10,15)`
 
-```sql
-begin;
-select id from t where c in(5,20,10) lock in share mode;
-```
+- 查找c=20：`c:Next-Key Lock:(15,20]`+`c:Gap Lock:(20,25)`
 
-加锁范围 (0,5]、(5,10)、(5,10]、(10,15)、(15,20]、(20,25)
+- 锁是在执行过程中是**一个一个**加的
+
+1. ORDER BY DESC
+
+   ```sql
+   BEGIN;
+   SELECT id FROM t WHERE c IN (5,20,10) ORDER BY c DESC FOR UPDATE;
+   
+   mysql> EXPLAIN SELECT id FROM t WHERE c IN (5,20,10) ORDER BY c DESC FOR UPDATE;
+   +----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+-----------------------------------------------+
+   | id | select_type | table | partitions | type  | possible_keys | key  | key_len | ref  | rows | filtered | Extra                                         |
+   +----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+-----------------------------------------------+
+   |  1 | SIMPLE      | t     | NULL       | range | c             | c    | 5       | NULL |    3 |   100.00 | Using where; Backward index scan; Using index |
+   +----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+-----------------------------------------------+
+   ```
+
+   - `ORDER BY DESC`：先锁`c=20`，再锁`c=10`，最后锁`c=5`
+
+   - **加锁资源相同**，但**加锁顺序相反**，如果语句是并发执行的，可能会出现**死锁**
 
 ### 死锁分析
 
@@ -478,7 +666,107 @@ select id from t where c in(5,20,10) lock in share mode;
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | start transaction;                                           |                                                              |
 |                                                              | start transaction;                                           |
-| update t set status = 1 where c = 5;<br />索引c上加(0,5] next-key 、(5,10) gap |                                                              |
-|                                                              | update t set status = 1 where c = 5; <br />因为加锁是一个动态过程，首先加gap锁 (0,5)，因为gap锁兼容，所以可以获取到这个gap锁<br />当扫描到c=5这行时，需要加行锁，但是此行锁已经在被事务1获取，所以无法获取到行锁，<br />所以事务2需要等待事务1释放锁，所以产生锁等待 |
+| update t set e = 1 where c = 5;<br />索引c上加(0,5] next-key 、(5,10) gap |                                                              |
+|                                                              | update t set e = 1 where c = 5; <br />因为加锁是一个动态过程，首先加gap锁 (0,5)，因为gap锁兼容，所以可以获取到这个gap锁<br />当扫描到c=5这行时，需要加行锁，但是此行锁已经在被事务1获取，所以无法获取到行锁，<br />所以事务2需要等待事务1释放锁，所以产生锁等待 |
 | insert into t set id = 4, c = 5;<br />插入语句会产生插入意向锁，会判断是否存在(0,5)gap、(0,5] next-key，<br />因为事务2持有(0,5)gap，如果需要插入成功，需要事务2释放(0,5)gap，<br />但是事务2又在等待事务1释放 c=5行锁，因此产生了环形等待，即死锁，所以触发事务2回滚 | ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction |
 
+## 分析死锁日志
+
+- 死锁场景：
+
+| session A                                                    | session B                               |
+| ------------------------------------------------------------ | --------------------------------------- |
+| BEGIN;                                                       |                                         |
+| SELECT id FROM t WHERE c=5 LOCK IN SHARE MODE;               |                                         |
+|                                                              | BEGIN;                                  |
+|                                                              | SELECT id FROM t WHERE c=20 FOR UPDATE; |
+| SELECT id FROM t WHERE c=20 LOCK IN SHARE MODE;              |                                         |
+|                                                              | SELECT id FROM t WHERE c=5 FOR UPDATE;  |
+| Deadlock found when trying to get lock; try restarting transaction |                                         |
+
+MySQL只保留**最后一个死锁的现场**，并且这个现场还不完备
+
+```sql
+mysql> SHOW ENGINE INNODB STATUS\G;
+*** (1) TRANSACTION:
+TRANSACTION 421596638701408, ACTIVE 23 sec starting index read
+mysql tables in use 1, locked 1
+LOCK WAIT 4 lock struct(s), heap size 1136, 3 row lock(s)
+MySQL thread id 2, OS thread handle 140121299891968, query id 964 172.17.0.1 root Sending data
+SELECT id FROM t WHERE c=20 LOCK IN SHARE MODE
+*** (1) WAITING FOR THIS LOCK TO BE GRANTED:
+RECORD LOCKS space id 39 page no 5 n bits 80 index c of table `test`.`t` trx id 421596638701408 lock mode S waiting
+Record lock, heap no 6 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+ 0: len 4; hex 80000014; asc     ;;
+ 1: len 4; hex 80000014; asc     ;;
+
+*** (2) TRANSACTION:
+TRANSACTION 8656, ACTIVE 14 sec starting index read
+mysql tables in use 1, locked 1
+5 lock struct(s), heap size 1136, 4 row lock(s)
+MySQL thread id 5, OS thread handle 140121299080960, query id 968 172.17.0.1 root Sending data
+SELECT id FROM t WHERE c=5 FOR UPDATE
+*** (2) HOLDS THE LOCK(S):
+RECORD LOCKS space id 39 page no 5 n bits 80 index c of table `test`.`t` trx id 8656 lock_mode X
+Record lock, heap no 6 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+ 0: len 4; hex 80000014; asc     ;;
+ 1: len 4; hex 80000014; asc     ;;
+
+*** (2) WAITING FOR THIS LOCK TO BE GRANTED:
+RECORD LOCKS space id 39 page no 5 n bits 80 index c of table `test`.`t` trx id 8656 lock_mode X waiting
+Record lock, heap no 3 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+ 0: len 4; hex 80000005; asc     ;;
+ 1: len 4; hex 80000005; asc     ;;
+
+*** WE ROLL BACK TRANSACTION (1)
+```
+
+- `(1) TRANSACTION`：第一个事务的信息
+- `(2) TRANSACTION`：第二个事务的信息
+- `WE ROLL BACK TRANSACTION (1)`：最终的处理结果是回滚第一个事务
+
+#### 第一个事务
+
+```sql
+SELECT id FROM t WHERE c=20 LOCK IN SHARE MODE
+*** (1) WAITING FOR THIS LOCK TO BE GRANTED:
+RECORD LOCKS space id 39 page no 5 n bits 80 index c of table `test`.`t` trx id 421596638701408 lock mode S waiting
+Record lock, heap no 6 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+ 0: len 4; hex 80000014; asc     ;;
+ 1: len 4; hex 80000014; asc     ;;
+```
+
+1. `(1) WAITING FOR THIS LOCK TO BE GRANTED`：表示第一个事务在等待的锁的信息
+2. `index c of table test.t`：表示等待表`t`的索引`c`上的锁
+3. `lock mode S waiting`：表示正在执行的语句要加一个`S Lock`，当前状态为**等待中**
+4. `Record lock`：表示这是一个**记录锁**（行数）
+5. `n_fields 2`：表示这个记录有2列（二级索引），即字段`c`和主键字段`id`
+6. `len 4; hex 80000014; asc ;;`：第一个字段`c`
+   - `asc`：表示接下来要打印值里面的**可打印字符**，20不是可打印字符，因此显示**空格**
+7. `1: len 4; hex 80000014; asc ;;`：第二个字段`id`
+8. 第一个事务在等待`(c=20,id=20)`这一行的行锁
+9. 但并没有打印出第一个事务本身所占有的锁，可以通过第二个事务反向推导出来
+
+#### 第二个事务
+
+```sql
+SELECT id FROM t WHERE c=5 FOR UPDATE
+*** (2) HOLDS THE LOCK(S):
+RECORD LOCKS space id 39 page no 5 n bits 80 index c of table `test`.`t` trx id 8656 lock_mode X
+Record lock, heap no 6 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+ 0: len 4; hex 80000014; asc     ;;
+ 1: len 4; hex 80000014; asc     ;;
+
+*** (2) WAITING FOR THIS LOCK TO BE GRANTED:
+RECORD LOCKS space id 39 page no 5 n bits 80 index c of table `test`.`t` trx id 8656 lock_mode X waiting
+Record lock, heap no 3 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+ 0: len 4; hex 80000005; asc     ;;
+ 1: len 4; hex 80000005; asc     ;;
+```
+
+1. `(2) HOLDS THE LOCK(S)`：表示第二个事务持有的锁的信息
+2. `index c of table test.t`：表示锁是加在表`t`的索引`c`上
+3. `0: len 4; hex 80000014; asc ;;`+`1: len 4; hex 80000014; asc ;;`
+   - 第二个事务持有`(c=20,id=20)`这一行的行锁（`X Lock`）
+4. `(2) WAITING FOR THIS LOCK TO BE GRANTED`
+   - 第二个事务等待`(c=5,id=5)`只一行的行锁
