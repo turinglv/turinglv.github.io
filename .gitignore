@@ -7,5 +7,4 @@ public/
 .deploy*/
 source/gitbook
 package-lock.json
-.idea/
-.idea
+**.idea/**
