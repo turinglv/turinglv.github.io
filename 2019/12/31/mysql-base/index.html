@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.json"};
+  </script>
+
+  <meta name="description" content="查询语句1mysql&gt; select * from T where ID&#x3D;10;  基本架构     大体上，MySQL可以分为Server层和存储引擎层 Server层包括连接器、查询缓存、分析器、优化器和执行器等 涵盖MySQL的大多数核心服务功能，以及所有的内置函数 所有的跨存储引擎的功能都在这一层实现，例如存储过程、触发器和视图等   存储引擎层负责数据的存储和提取，架构模式为插件式">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MySQL -- 基础架构">
+<meta property="og:url" content="http://example.com/2019/12/31/mysql-base/index.html">
+<meta property="og:site_name" content="温故而知新">
+<meta property="og:description" content="查询语句1mysql&gt; select * from T where ID&#x3D;10;  基本架构     大体上，MySQL可以分为Server层和存储引擎层 Server层包括连接器、查询缓存、分析器、优化器和执行器等 涵盖MySQL的大多数核心服务功能，以及所有的内置函数 所有的跨存储引擎的功能都在这一层实现，例如存储过程、触发器和视图等   存储引擎层负责数据的存储和提取，架构模式为插件式">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/images/mysql-base/mysql-architecture-20210517110625157.png">
+<meta property="article:published_time" content="2019-12-31T16:00:00.000Z">
+<meta property="article:modified_time" content="2022-05-11T13:27:38.352Z">
+<meta property="article:author" content="tlv">
+<meta property="article:tag" content="Storage">
+<meta property="article:tag" content="MySQL">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/images/mysql-base/mysql-architecture-20210517110625157.png">
+
+<link rel="canonical" href="http://example.com/2019/12/31/mysql-base/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>MySQL -- 基础架构 | 温故而知新</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">温故而知新</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories<span class="badge">7</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives<span class="badge">8</span></a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2019/12/31/mysql-base/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpeg">
+      <meta itemprop="name" content="tlv">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="温故而知新">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          MySQL -- 基础架构
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2020-01-01 00:00:00" itemprop="dateCreated datePublished" datetime="2020-01-01T00:00:00+08:00">2020-01-01</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-05-11 21:27:38" itemprop="dateModified" datetime="2022-05-11T21:27:38+08:00">2022-05-11</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Storage/" itemprop="url" rel="index"><span itemprop="name">Storage</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Storage/MySQL/" itemprop="url" rel="index"><span itemprop="name">MySQL</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>4.4k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>4 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="查询语句"><a href="#查询语句" class="headerlink" title="查询语句"></a>查询语句</h2><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mysql<span class="operator">&gt;</span> <span class="keyword">select</span> <span class="operator">*</span> <span class="keyword">from</span> T <span class="keyword">where</span> ID<span class="operator">=</span><span class="number">10</span>;</span><br></pre></td></tr></table></figure>
+
+<h2 id="基本架构"><a href="#基本架构" class="headerlink" title="基本架构"></a>基本架构</h2><img src="/images/mysql-base/mysql-architecture-20210517110625157.png" alt="img" style="zoom:28%;" />
+
+
+
+<ol>
+<li>大体上，MySQL可以分为<strong>Server层</strong>和<strong>存储引擎层</strong></li>
+<li>Server层包括<strong>连接器、查询缓存、分析器、优化器和执行器</strong>等<ul>
+<li>涵盖MySQL的<strong>大多数核心服务功能</strong>，以及<strong>所有的内置函数</strong></li>
+<li>所有的<strong>跨存储引擎的功能</strong>都在这一层实现，例如存储过程、触发器和视图等</li>
+</ul>
+</li>
+<li>存储引擎层负责<strong>数据的存储和提取</strong>，架构模式为<strong>插件式</strong><ul>
+<li>支持InnoDB、MyISAM和Memory等存储引擎</li>
+<li>最常用为<strong>InnoDB</strong>（Since 5.5.5，默认）</li>
+</ul>
+</li>
+</ol>
+<h3 id="连接器"><a href="#连接器" class="headerlink" title="连接器"></a>连接器</h3><p>连接器负责跟客户端<strong>建立连接、获取权限、维持和管理连接</strong>。命令如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mysql -h$host -P$port -u$user -p</span><br></pre></td></tr></table></figure>
+
+<h3 id="权限"><a href="#权限" class="headerlink" title="权限"></a>权限</h3><ul>
+<li>连接命令中的 mysql 是客户端工具，用来跟服务端建立连接</li>
+<li>在完成经典的 TCP 握手后，连接器就要开始认证你的身份，使用 <code>-u</code>  <code>-p</code><ul>
+<li>如果用户名或密码不对，你就会收到一个**”Access denied for user”**的错误，然后客户端程序结束执行</li>
+<li>如果用户名密码认证通过，连接器会到<strong>权限表</strong>里面查出你拥有的权限<ul>
+<li>之后，这个连接里面的权限判断逻辑，都将依赖于此时读到的权限</li>
+<li>因此即使用管理员账号对权限进行修改，也<strong>不会影响到已经存在连接的权限</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="连接"><a href="#连接" class="headerlink" title="连接"></a>连接</h3><ul>
+<li>连接完成后，如果你没有后续的动作，这个连接就处于空闲状态<ul>
+<li>使用 <code>show processlist;</code> 其中的 Command 列显示为“Sleep”的这一行，就表示现在系统里面有一个空闲连接</li>
+</ul>
+</li>
+<li>客户端如果太长时间没动静，连接器就会自动将它断开。这个时间是由参数 <code>wait_timeout</code> 控制的，默认值是 8 小时<ul>
+<li>如果在连接被断开之后，客户端再次发送请求的话，就会收到一个错误提醒： Lost connection to MySQL server during query。这时候如果要继续，就需要重连，然后再执行请求</li>
+</ul>
+</li>
+<li>数据库<code>长连接</code> 、<code>短连接</code><ul>
+<li>长连接是指连接成功后，如果客户端持续有请求，则一直使用同一个连接<ul>
+<li>建立连接的过程通常是比较复杂的，所以建议你在使用中要尽量减少建立连接的动作，也就是尽量使用长连接</li>
+</ul>
+</li>
+<li>短连接则是指每次执行完很少的几次查询就断开连接，下次查询再重新建立一个</li>
+</ul>
+</li>
+<li>全部使用长连接后，可能会导致 MySQL 占用内存涨得特别快<ul>
+<li>原因： MySQL 在执行过程中临时使用的<strong>内存是管理在连接对象里面的</strong>。这些资源会在<strong>连接断开的时候才释放</strong>。所以如果长连接累积下来，可能导致内存占用太大，被系统强行杀掉（OOM），从现象看就是 MySQL 异常重启了。</li>
+<li>解决方法：<ul>
+<li>定期断开长连接，使用一段时间，或者程序里面判断执行过一个占用内存的大查询后，断开连接，之后要查询再重连。</li>
+<li>MySQL 5.7 或更新版本，可以在每次执行比较大的操作后，通过执行 <code>mysql_reset_connection</code> 来重新<strong>初始化连接资源</strong><ul>
+<li>这个过程<strong>不需要重连和重新做权限验证</strong></li>
+<li>会将连接恢复到刚刚创建完时的状态</li>
+</ul>
+<strong>注：mysql_reset_connection是mysql为各个编程语言提供的api，不是sql语句</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">mysql&gt; show processlist;</span><br><span class="line">+----+------+------------------+-------+---------+------+----------+------------------+</span><br><span class="line">| Id | User | Host             | db    | Command | Time | State    | Info             |</span><br><span class="line">+----+------+------------------+-------+---------+------+----------+------------------+</span><br><span class="line">|  2 | root | localhost        | NULL  | Query   |    0 | starting | show processlist |</span><br><span class="line">|  3 | root | 172.17.0.1:33260 | mysql | Sleep   |    4 |          | NULL             |</span><br><span class="line">|  4 | root | 172.17.0.1:33262 | mysql | Sleep   |    4 |          | NULL             |</span><br><span class="line">+----+------+------------------+-------+---------+------+----------+------------------+</span><br><span class="line"></span><br><span class="line"># MySQL各timeout参数</span><br><span class="line">mysql&gt; SHOW VARIABLES LIKE &#x27;%timeout%&#x27;;</span><br><span class="line">+-----------------------------+----------+</span><br><span class="line">| Variable_name               | Value    |</span><br><span class="line">+-----------------------------+----------+</span><br><span class="line">| connect_timeout             | 10       |</span><br><span class="line">| delayed_insert_timeout      | 300      |</span><br><span class="line">| have_statement_timeout      | YES      |</span><br><span class="line">| innodb_flush_log_at_timeout | 1        |</span><br><span class="line">| innodb_lock_wait_timeout    | 50       |</span><br><span class="line">| innodb_rollback_on_timeout  | OFF      |</span><br><span class="line">| interactive_timeout         | 28800    |</span><br><span class="line">| lock_wait_timeout           | 31536000 |</span><br><span class="line">| net_read_timeout            | 30       |</span><br><span class="line">| net_write_timeout           | 60       |</span><br><span class="line">| rpl_stop_slave_timeout      | 31536000 |</span><br><span class="line">| slave_net_timeout           | 60       |</span><br><span class="line">| wait_timeout                | 28800    |</span><br><span class="line">+-----------------------------+----------+</span><br></pre></td></tr></table></figure>
+
+
+
+<table>
+<thead>
+<tr>
+<th align="left">参数名称</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">connect_timeout</td>
+<td>该参数控制与服务器建立连接的时候等待三次握手成功的超时时间，该参数主要是对于网络质量较差导致连接超时，建议外网访问波动较大可以提高该参数。</td>
+</tr>
+<tr>
+<td align="left">delayed_insert_timeout</td>
+<td>指INSERT语句执行的超时时间。</td>
+</tr>
+<tr>
+<td align="left">innodb_lock_wait_timeout</td>
+<td>指锁等待的超时时间，该锁不同于死锁是指正常一个事务等待另外一个事务的S锁或者X锁的超时时间。</td>
+</tr>
+<tr>
+<td align="left">innodb_rollback_on_timeout</td>
+<td>当事务超时超过该参数后即会回滚，如果设置为OFF即只回滚事务的最后一个请求。</td>
+</tr>
+<tr>
+<td align="left">interactive_timeout<br />wait_timeout</td>
+<td>mysql在关闭一个交互式/非交互式的连接之前所要等待的时间。建议不需要设置太长的时候，否则会占用实例的连接数资源。</td>
+</tr>
+<tr>
+<td align="left">lock_wait_timeout</td>
+<td>指定尝试获取元数据锁的超时时间。</td>
+</tr>
+<tr>
+<td align="left">net_read_timeout<br />net_write_timeout</td>
+<td>指服务器端等待客户端发送的网络包和发送给客户端网络包的超时时间，这两个参数是对TCP/IP链接并且是Activity状态下的线程才有效的参数。</td>
+</tr>
+<tr>
+<td align="left">slave_net_timeout</td>
+<td>备实例等待主服务器同步的超时时间，超时后中止同步并尝试重新连接。</td>
+</tr>
+</tbody></table>
+<h3 id="查询缓存"><a href="#查询缓存" class="headerlink" title="查询缓存"></a>查询缓存</h3><ul>
+<li>MySQL 拿到一个查询请求后，会先到查询缓存</li>
+<li>之前执行过的语句及其结果可能会以 key-value 对的形式，被直接缓存在内存中<ul>
+<li>key: 查询语句</li>
+<li>value: 查询结果</li>
+</ul>
+</li>
+<li>如果根据key(查询条件)命中缓存，直接返回对应的Value</li>
+<li>否则就会继续后面的执行阶段，执行完成后，执行结果会被存入查询缓存中</li>
+<li><strong>使用缓存弊大于利</strong><ul>
+<li><strong>查询缓存的失效非常频繁</strong>，只要有对一个表的更新，这个表上所有的查询缓存都会被清空</li>
+<li>查询缓存的命中率会非常低</li>
+<li>查询缓存适用于读多写少的场景，比如静态配置表</li>
+</ul>
+</li>
+<li>query_cache_type<ul>
+<li>A value of 0 or <strong>OFF</strong> prevents caching or retrieval of cached results</li>
+<li>A value of 1 or <strong>ON</strong> enables caching except of those statements that begin with <strong>SELECT SQL_NO_CACHE</strong></li>
+<li>A value of 2 or <strong>DEMAND</strong> causes caching of only those statements that begin with <strong>SELECT SQL_CACHE</strong></li>
+</ul>
+</li>
+<li>可以将参数 query_cache_type 设置成 DEMAND，默认的 SQL 语句都不使用查询缓存<br>对于确定要使用查询缓存的语句，可以用 SQL_CACHE 显式指定，如下：<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">select</span> SQL_CACHE <span class="operator">*</span> <span class="keyword">from</span> T <span class="keyword">where</span> ID<span class="operator">=</span><span class="number">10</span>；</span><br></pre></td></tr></table></figure></li>
+<li><strong>MySQL 8.0 版本删除了查询缓存功能</strong></li>
+</ul>
+<h3 id="分析器"><a href="#分析器" class="headerlink" title="分析器"></a>分析器</h3><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">select</span> <span class="operator">*</span> <span class="keyword">from</span> T <span class="keyword">where</span> ID<span class="operator">=</span><span class="number">10</span>;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>分析器先会做<strong>词法分析</strong><ul>
+<li>MySQL 需要识别出里面的字符串分别是什么，代表什么</li>
+<li>通过<strong>select</strong>识别是查询语句</li>
+<li>将字符串<strong>T</strong>识别成表，字符串<strong>ID</strong>识别成列</li>
+</ul>
+</li>
+<li>分析器再做<strong>语法分析</strong><ul>
+<li>根据词法分析的结果，语法分析会根据<strong>语法规则</strong>，判断SQL是否满足MySQL语法</li>
+<li>如果不满足，将会收到错误<code>You have an error in your SQL syntax</code>错误</li>
+</ul>
+</li>
+</ul>
+<h3 id="优化器"><a href="#优化器" class="headerlink" title="优化器"></a>优化器</h3><ul>
+<li>经过<strong>分析器</strong>，MySQL已经能理解要<strong>做什么</strong>，在开始执行之前，需要经过<strong>优化器</strong>的处理，达到<strong>怎么做</strong></li>
+<li>优化器会在表里存在多个索引的时候，选择使用哪个索引</li>
+<li>优化器也会在多表关联的时候，决定各个表的连接顺序</li>
+<li>优化器阶段完成后，语句的<strong>执行方案</strong>就已经能确定下来了，然后进入执行器阶段</li>
+</ul>
+<h3 id="执行器"><a href="#执行器" class="headerlink" title="执行器"></a>执行器</h3><ul>
+<li>MySQL通过<strong>分析器</strong>能明白<strong>做什么</strong>，再通过<strong>优化器</strong>能明白<strong>怎么做</strong>，而<strong>执行器</strong>是负责语句的<strong>具体执行</strong></li>
+<li>首先会判断是否有执行权限，如果没有就会返回权限错误，<strong>SELECT command denied to user</strong><ul>
+<li>如果命中查询缓存，也会在查询缓存<strong>返回</strong>结果的时候，做权限验证</li>
+<li>优化器之前也会调用<strong>precheck</strong>做验证权限</li>
+</ul>
+</li>
+<li>如果有权限，那么将打开表继续执行<ul>
+<li>打开表的时候，执行器会根据表的引擎定义，去<strong>调用引擎提供的接口</strong></li>
+</ul>
+</li>
+<li>假设表T中，ID字段没有索引，执行器的执行流程如下<ul>
+<li>调用InnoDB的引擎接口，获取表的第一行，判断ID是否为10<ul>
+<li>如果不是则跳过，如果是则将这行存放在结果集中</li>
+</ul>
+</li>
+<li>调用引擎接口获取下一行，重复上面的判断逻辑，直到获取到表的最后一行</li>
+<li>执行器将上面遍历过程中所有满足条件的行组成的记录集作为结果集返回给客户端</li>
+</ul>
+</li>
+<li>rows_examined<ul>
+<li>数据库的慢查询日志会有<code>rows_examined</code>字段</li>
+<li>在执行器每次调用引擎获取数据行的时候<strong>累加</strong>的（+1）</li>
+<li>有些场景，执行器调用一次，但在引擎内部则是扫描了很多行<ul>
+<li>例如在InnoDB中，<strong>一页有很多行数据</strong></li>
+</ul>
+</li>
+<li>因此，<strong>引擎扫描行数（引擎内部真正扫描的次数）跟rows_examined并不完全相同</strong></li>
+</ul>
+</li>
+</ul>
+<h3 id="思考问题"><a href="#思考问题" class="headerlink" title="思考问题"></a>思考问题</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">如果表 T 中没有字段 k，而你执行了这个语句 select * from T where k=1, </span><br><span class="line">那肯定是会报“不存在这个列”的错误： “Unknown column ‘k’ in ‘where clause’”。</span><br><span class="line">你觉得这个错误是在我们上面提到的哪个阶段报出来的呢？</span><br></pre></td></tr></table></figure>
+<p><strong>分析器</strong></p>
+<h3 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h3><p>《MySQL实战45讲》</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Storage/" rel="tag"># Storage</a>
+              <a href="/tags/MySQL/" rel="tag"># MySQL</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/12/31/zk-source-build/" rel="prev" title="Zookeeper -- 客户端源码解析">
+      <i class="fa fa-chevron-left"></i> Zookeeper -- 客户端源码解析
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2020/01/04/zk-server2client/" rel="next" title="Zookeeper -- 服务端与客户端网络通信源码分析">
+      Zookeeper -- 服务端与客户端网络通信源码分析 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9F%A5%E8%AF%A2%E8%AF%AD%E5%8F%A5"><span class="nav-number">1.</span> <span class="nav-text">查询语句</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E6%9E%B6%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text">基本架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9E%E6%8E%A5%E5%99%A8"><span class="nav-number">2.1.</span> <span class="nav-text">连接器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9D%83%E9%99%90"><span class="nav-number">2.2.</span> <span class="nav-text">权限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9E%E6%8E%A5"><span class="nav-number">2.3.</span> <span class="nav-text">连接</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9F%A5%E8%AF%A2%E7%BC%93%E5%AD%98"><span class="nav-number">2.4.</span> <span class="nav-text">查询缓存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E6%9E%90%E5%99%A8"><span class="nav-number">2.5.</span> <span class="nav-text">分析器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%98%E5%8C%96%E5%99%A8"><span class="nav-number">2.6.</span> <span class="nav-text">优化器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C%E5%99%A8"><span class="nav-number">2.7.</span> <span class="nav-text">执行器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%80%9D%E8%80%83%E9%97%AE%E9%A2%98"><span class="nav-number">2.8.</span> <span class="nav-text">思考问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">2.9.</span> <span class="nav-text">参考资料</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="tlv"
+      src="/images/avatar.jpeg">
+  <p class="site-author-name" itemprop="name">tlv</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">tags</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 2015 – 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">tlv</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+<script src="/js/bookmark.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+  <script src="//cdn.jsdelivr.net/npm/quicklink@1/dist/quicklink.umd.js"></script>
+  <script>
+      window.addEventListener('load', () => {
+      quicklink({
+        timeout : 3000,
+        priority: true,
+        ignores : [uri => uri.includes('#'),uri => uri === 'http://example.com/2019/12/31/mysql-base/',]
+      });
+      });
+  </script>
+
+</body>
+</html>

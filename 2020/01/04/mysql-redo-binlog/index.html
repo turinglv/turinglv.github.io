@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.json"};
+  </script>
+
+  <meta name="description" content="更新语句123create table T(ID int primary key, c int);update T set c&#x3D;c+1 where ID&#x3D;2; 执行过程   通过连接器，客户端与MySQL建立连接 update语句会把T表上的所有查询缓存清空 分析器会通过词法分析和语法分析识别这是一条更新语句 优化器会决定使用id这个索引（聚簇索引） 执行器负责具体执行，找到匹配的一行，然后更新">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MySQL -- redolog &amp; binlog">
+<meta property="og:url" content="http://example.com/2020/01/04/mysql-redo-binlog/index.html">
+<meta property="og:site_name" content="温故而知新">
+<meta property="og:description" content="更新语句123create table T(ID int primary key, c int);update T set c&#x3D;c+1 where ID&#x3D;2; 执行过程   通过连接器，客户端与MySQL建立连接 update语句会把T表上的所有查询缓存清空 分析器会通过词法分析和语法分析识别这是一条更新语句 优化器会决定使用id这个索引（聚簇索引） 执行器负责具体执行，找到匹配的一行，然后更新">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/images/mysql-redo-binlog/0d2070e8f84c4801adbfa03bda1f98d9.png">
+<meta property="og:image" content="http://example.com/images/mysql-redo-binlog/16a7950217b3f0f4ed02db5db59562a7.png">
+<meta property="og:image" content="http://example.com/images/mysql-redo-binlog/5.png">
+<meta property="og:image" content="http://example.com/images/mysql-redo-binlog/mysql-innodb-update-procedure-1.jpg">
+<meta property="article:published_time" content="2020-01-04T16:00:00.000Z">
+<meta property="article:modified_time" content="2022-05-11T13:27:38.360Z">
+<meta property="article:author" content="tlv">
+<meta property="article:tag" content="Storage">
+<meta property="article:tag" content="MySQL">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/images/mysql-redo-binlog/0d2070e8f84c4801adbfa03bda1f98d9.png">
+
+<link rel="canonical" href="http://example.com/2020/01/04/mysql-redo-binlog/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>MySQL -- redolog & binlog | 温故而知新</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">温故而知新</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories<span class="badge">7</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives<span class="badge">8</span></a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2020/01/04/mysql-redo-binlog/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpeg">
+      <meta itemprop="name" content="tlv">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="温故而知新">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          MySQL -- redolog & binlog
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2020-01-05 00:00:00" itemprop="dateCreated datePublished" datetime="2020-01-05T00:00:00+08:00">2020-01-05</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-05-11 21:27:38" itemprop="dateModified" datetime="2022-05-11T21:27:38+08:00">2022-05-11</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Storage/" itemprop="url" rel="index"><span itemprop="name">Storage</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Storage/MySQL/" itemprop="url" rel="index"><span itemprop="name">MySQL</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>5.8k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>5 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h3 id="更新语句"><a href="#更新语句" class="headerlink" title="更新语句"></a>更新语句</h3><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">create</span> <span class="keyword">table</span> T(ID <span class="type">int</span> <span class="keyword">primary</span> key, c <span class="type">int</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">update</span> T <span class="keyword">set</span> c<span class="operator">=</span>c<span class="operator">+</span><span class="number">1</span> <span class="keyword">where</span> ID<span class="operator">=</span><span class="number">2</span>;</span><br></pre></td></tr></table></figure>
+<h3 id="执行过程"><a href="#执行过程" class="headerlink" title="执行过程"></a>执行过程</h3><img src="/images/mysql-redo-binlog/0d2070e8f84c4801adbfa03bda1f98d9.png" alt="img" style="zoom:30%;" />
+
+<ol>
+<li>通过连接器，客户端与MySQL建立连接</li>
+<li>update语句会把<strong>T表上的所有查询缓存清空</strong></li>
+<li>分析器会通过词法分析和语法分析识别这是一条更新语句</li>
+<li>优化器会决定使用id这个索引（聚簇索引）</li>
+<li>执行器负责具体执行，找到匹配的一行，然后更新</li>
+<li>更新过程中还会涉及<strong>redolog</strong>（重做日志）和<strong>binlog</strong>（归档日志）的操作</li>
+</ol>
+<h3 id=""><a href="#" class="headerlink" title=""></a></h3><ul>
+<li><p>如果每一次的更新操作都需要写进磁盘，然后磁盘也要找到对应的那条记录，然后再更新，整个过程<strong>IO</strong> 成本、查找成本都很高</p>
+<ul>
+<li><strong>IO成本</strong>就是寻址时间和上下文切换所需要的时间，最主要是用户态和内核态的上下文切换。用户态是无法直接访问磁盘等硬件上的数据的，只能通过操作系统去调内核态的接口，用内核态的线程去访问。 这里的上下文切换指的是同进程的线程上下文切换，所谓上下文就是线程运行需要的环境信息。 首先，用户态线程需要将一些中间计算结果保存CPU寄存器，保存CPU指令的地址到程序计数器（执行顺序保证），还要保存栈的信息等一些线程私有的信息。 然后切换到内核态的线程执行，就需要把线程的私有信息从寄存器，程序计数器里读出来，然后执行读磁盘上的数据。读完后返回，又要把线程的信息写进寄存器和程序计数器。 切换到用户态后，用户态线程又要读之前保存的线程执行的环境信息出来，恢复执行。这个过程主要是消耗时间资源。</li>
+</ul>
+</li>
+<li><p>为了解决这个问题，MySQL 使用的是 WAL 技术( Write-Ahead Logging)：<strong>先写日志，再写磁盘</strong></p>
+</li>
+<li><p>当有一条记录需要更新的时候，InnoDB会把记录先写入redolog（redolog buffer），并<strong>更新内存</strong>（buffer pool）</p>
+<ul>
+<li>InnoDB会在适当 redolog – InnoDB的时候（例如系统空闲），将这个操作记录到磁盘里面（<strong>刷脏页</strong>）</li>
+</ul>
+</li>
+<li><p>InnoDB 的 redo log 是固定大小的，比如可以配置为一组 4 个文件，每个文件的大小是 1GB</p>
+<img src="/images/mysql-redo-binlog/16a7950217b3f0f4ed02db5db59562a7.png" alt="img" style="zoom:40%;" />
+
+<ul>
+<li>redo log的总大小为4G，<strong>循环写</strong></li>
+<li>write pos 是当前记录的位置，一边写一边后移，写到第 3 号文件末尾后就回到 0 号文件开头<ul>
+<li>redolog是<strong>顺序写</strong>，数据文件是<strong>随机写</strong></li>
+</ul>
+</li>
+<li>checkpoint 是当前要擦除的位置，也是往后推移并且循环的，擦除记录前要把记录更新到数据文件</li>
+<li>write pos 和 checkpoint 之间空闲部分，可以用来记录新的操作<ul>
+<li>write pos 追上 checkpoint，磁盘写满，不能再执行新的更新，需要擦掉一些记录，把 checkpoint 推进一下</li>
+<li>write pos 未追上 checkpoint，可以执行新的更新</li>
+<li>果checkpoint赶上了write pos，说明redolog已<strong>空</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>有了 redo log，InnoDB 就可以保证即使数据库发生异常重启，之前提交的记录都不会丢失，这个能力称为 crash-safe</p>
+</li>
+<li><p>如果redolog太小，会导致很快被写满，然后就不得不强行刷redolog，导致频繁刷盘，这样WAL机制的能力就无法发挥出来</p>
+<ul>
+<li>如果磁盘能达到几TB，那么可以将redolog设置4个一组，每个日志文件大小为1GB</li>
+</ul>
+</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"># innodb_log_file_size -&gt; 单个redolog文件的大小</span><br><span class="line"># innodb_log_files_in_group -&gt; redolog文件个数</span><br><span class="line"># 50331648 Byte = 48 MB</span><br><span class="line">mysql&gt; SHOW VARIABLES LIKE &#x27;%innodb_log_file%&#x27;;</span><br><span class="line">+---------------------------+----------+</span><br><span class="line">| Variable_name             | Value    |</span><br><span class="line">+---------------------------+----------+</span><br><span class="line">| innodb_log_file_size      | 50331648 |</span><br><span class="line">| innodb_log_files_in_group | 2        |</span><br><span class="line">+---------------------------+----------+</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">mysql&gt; SHOW VARIABLES LIKE &#x27;%innodb_flush_log_at_trx_commit%&#x27;;</span><br><span class="line">+--------------------------------+-------+</span><br><span class="line">| Variable_name                  | Value |</span><br><span class="line">+--------------------------------+-------+</span><br><span class="line">| innodb_flush_log_at_trx_commit | 1     |</span><br><span class="line">+--------------------------------+-------+</span><br></pre></td></tr></table></figure>
+
+<p><strong>官网文档解释</strong>：<a target="_blank" rel="noopener" href="https://dev.mysql.com/doc/refman/5.6/en/innodb-parameters.html#sysvar_innodb_flush_log_at_trx_commit">innodb_flush_log_at_trx_commit</a></p>
+<p><code>innodb_flush_log_at_trx_commit</code> 作用于事务提交时：</p>
+<ul>
+<li>1: 每次事务提交都要做一次fsync，这是最安全的配置，即使宕机也不会丢失事务；</li>
+<li>2: 则在事务提交时只做write操作，只保证写到系统的page cache，因此实例crash不会丢失事务，但宕机则可能丢失事务；</li>
+<li>0: 事务提交不会触发redo写操作，而是留给后台线程每秒一次的刷盘操作，因此实例crash将最多丢失1秒钟内的事务。</li>
+</ul>
+<img src="/images/mysql-redo-binlog/5.png" alt="redo持久化程度" style="zoom:80%;" />
+
+<h3 id="binlog-Server"><a href="#binlog-Server" class="headerlink" title="binlog - Server"></a>binlog - Server</h3><ul>
+<li>redo log属于InnoDB引擎特有的日志，Server层也有自己的日志，称为 <strong>binlog</strong>（归档日志）</li>
+<li><strong>为什么会有两份日志呢？</strong><ul>
+<li>一开始并没有InnoDB，采用的是MyISAM，但<strong>MyISAM没有crash-safe的能力</strong>，<strong>binlog日志只能用于归档</strong></li>
+<li>InnoDB是以插件的形式引入MySQL的，<strong>为了实现crash-safe</strong>，InnoDB采用了<strong>redolog</strong>的方案</li>
+</ul>
+</li>
+<li>binlog一开始的设计就是<strong>不支持崩溃恢复</strong>（原库）的，如果不考虑搭建从库等操作，<strong>binlog是可以关闭的</strong>（sql_log_bin）</li>
+<li>redolog vs binlog<ul>
+<li>redo log 是 InnoDB 引擎特有的；binlog 是 MySQL 的 Server 层实现的，所有引擎都可以使用</li>
+<li>redo log 是物理日志，记录的是“在某个数据页上做了什么修改”；binlog 是逻辑日志，记录的是这个语句的原始逻辑，比如“给 ID=2 这一行的 c 字段加 1 ”<ul>
+<li>逻辑日志：<strong>提供给别的引擎用</strong>，是大家都能理解的逻辑，例如<strong>搭建从库</strong></li>
+<li>物理日志：<strong>只能内部使用</strong>，其他引擎无法共享内部的物理格式</li>
+</ul>
+</li>
+<li>redo log 是<strong>循环写</strong>，<strong>空间固定</strong>，<strong>不能持久保存</strong>，没有<strong>归档</strong>功能； binlog是<strong>追加写</strong>，<strong>空间不受限制</strong>，有<strong>归档</strong>功能</li>
+<li>MySQL **InnoDB事务的持久性(Durability)**是通过redolog实现</li>
+<li>binlog有两种模式：<ul>
+<li><strong>statement格式</strong>：SQL语句</li>
+<li><strong>row格式</strong>：行内容（记两条，更新前和更新后），<strong>推荐</strong><ul>
+<li>日志一样的可以用于<strong>重放</strong><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">mysql&gt; SHOW VARIABLES LIKE &#x27;%sql_log_bin%&#x27;;</span><br><span class="line">+---------------+-------+</span><br><span class="line">| Variable_name | Value |</span><br><span class="line">+---------------+-------+</span><br><span class="line">| sql_log_bin   | ON    |</span><br><span class="line">+---------------+-------+</span><br></pre></td></tr></table></figure></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="update-内部流程"><a href="#update-内部流程" class="headerlink" title="update 内部流程"></a>update 内部流程</h3><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">create</span> <span class="keyword">table</span> T(ID <span class="type">int</span> <span class="keyword">primary</span> key, c <span class="type">int</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">update</span> T <span class="keyword">set</span> c<span class="operator">=</span>c<span class="operator">+</span><span class="number">1</span> <span class="keyword">where</span> ID<span class="operator">=</span><span class="number">2</span>;</span><br></pre></td></tr></table></figure>
+
+<img src="/images/mysql-redo-binlog/mysql-innodb-update-procedure-1.jpg" alt="img" style="zoom:45%;" />
+
+<p>注：深绿色是在Server层执行，浅绿色是在InnoDB引擎中执行。</p>
+<ol>
+<li>执行器先通过InnoDB获取id=2这一行，id是主键，InnoDB可以通过聚簇索引找到这一行<ul>
+<li>如果<strong>id=2这一行所在的数据页</strong>本来就在内存（<strong>InnoDB Buffer Pool</strong>）中，直接返回给执行器</li>
+<li>否则先从磁盘读入内存，然后再返回</li>
+</ul>
+</li>
+<li>执行器拿到InnoDB返回的行数据，进行**+1**操作，得到新的一行数据，再调用InnoDB的引擎接口写入这行数据</li>
+<li>InnoDB首先将这行新数据更新到内存（InnoDB Buffer Pool）中，同时将这个更新操作记录到redolog（物理记录）<ul>
+<li>更新到内存中，在事务提交后，后续的查询就可以直接在内存中读取该数据页，但此时的数据可能还没有真正落盘<ul>
+<li>但在<strong>事务提交前，其他事务是无法看到这个内存修改的</strong></li>
+<li>而在<strong>事务提交后，说明已经成功写入了redolog，可崩溃恢复，不会丢数据，因此可以直接读内存的数据</strong></li>
+</ul>
+</li>
+<li>刚更新的内存是不会删除的，除非内存不够用，在数据从内存删除之前，系统会保证它们已经落盘</li>
+<li>此时redolog处于prepare状态（prepare标签），然后告诉执行器执行完成，随时可以提交事务<ul>
+<li>对其他事务来说，刚刚修改的内存是<strong>不可见</strong>的</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>执行器生成这个操作的binlog（逻辑记录）并写入磁盘<ul>
+<li>binlog写成功事务就算成功，可以提交事务<ul>
+<li>哪怕崩溃恢复，也会恢复binlog写成功的事务（此时对应的redolog处于prepare状态）</li>
+</ul>
+</li>
+<li>binlog如果没写成功就回滚，回滚会写redolog，打上rollback标签，binlog则会直接丢弃<ul>
+<li>如果binlog不丢弃，则会传播到从库</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>执行器调用InnoDB的提交事务接口，InnoDB把刚刚写入的redolog改成commit状态，更新完成<ul>
+<li>redolog打上了<strong>commit标签</strong></li>
+<li>commit表示两个日志都生效了</li>
+<li>commit完成后才会返回客户端</li>
+</ul>
+</li>
+</ol>
+<p><a target="_blank" rel="noopener" href="https://dev.mysql.com/doc/refman/5.6/en/replication-options-binary-log.html#sysvar_sync_binlog">sync_binlog</a></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">mysql&gt; SHOW VARIABLES LIKE &#x27;%sync_binlog%&#x27;;</span><br><span class="line">+---------------+-------+</span><br><span class="line">| Variable_name | Value |</span><br><span class="line">+---------------+-------+</span><br><span class="line">| sync_binlog   | 1     |</span><br><span class="line">+---------------+-------+</span><br><span class="line">1 row in set (0.01 sec)</span><br></pre></td></tr></table></figure>
+
+<p><strong>sync_binlog参数：</strong></p>
+<ul>
+<li>0：每次事务提交后，将Binlog Cache中的数据写入到Binlog文件，但不立即刷新到磁盘。由文件系统(file system)决定何时刷新到磁盘中</li>
+<li>1：每次事务提交后，将Binlog Cache中的数据写入到Binlog文件,调用fdatasync()函数将数据刷新到磁盘中</li>
+<li>N:  每N次事务提交后，将Binlog Cache中的数据写入到Binlog文件,调用fdatasync()函数将数据刷新到磁盘中</li>
+</ul>
+<h3 id="sync-binlog-amp-innodb-flush-log-at-trx-commit-最佳实践"><a href="#sync-binlog-amp-innodb-flush-log-at-trx-commit-最佳实践" class="headerlink" title="sync_binlog &amp; innodb_flush_log_at_trx_commit 最佳实践"></a>sync_binlog &amp; innodb_flush_log_at_trx_commit 最佳实践</h3><table>
+<thead>
+<tr>
+<th>innodb_flush_log_at_trx_commit</th>
+<th>sync_binlog</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>1</td>
+<td>适合数据安全性要求非常高，而且磁盘写入能力足够支持业务。</td>
+</tr>
+<tr>
+<td>1</td>
+<td>0</td>
+<td>适合数据安全性要求高，磁盘写入能力支持业务不足，允许备库落后或无复制。</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0/N(0&lt;N&lt;100)</td>
+<td>适合数据安全性要求低，允许丢失一点事务日志，允许复制延迟。</td>
+</tr>
+<tr>
+<td>0</td>
+<td>0</td>
+<td>磁盘写能力有限，无复制或允许复制延迟较长。</td>
+</tr>
+</tbody></table>
+<h3 id="两阶段提交"><a href="#两阶段提交" class="headerlink" title="两阶段提交"></a>两阶段提交</h3><ol>
+<li>目的：为了让两份日志之间的逻辑一致</li>
+<li>如果不使用两阶段提交：<ul>
+<li>先写 redo log 后写 binlog<ul>
+<li>产生问题：假设 redo log 写成功（落盘成功），binlog 还没有写完（暂未落盘成功），MySQL 进程异常重启，<br>MySQL重启恢复可以使用redo log将数据恢复，如果使用binlog恢复临时库，因为binlog缺失数据，会导致数据与原库不一致</li>
+</ul>
+</li>
+<li>先写 binlog 后写 redo log<ul>
+<li>产生问题：假设 binlog 写成功（落盘成功），redo log 还没有写完（暂未落盘成功），MySQL 进程异常重启，MySQL重启恢复无法使用redo log将数据恢复，但是因为binlog记录了最新的更新操作，使用binlog恢复数据的时候会导致数据与原库不一致</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<h3 id="binlog、redolog功能区别"><a href="#binlog、redolog功能区别" class="headerlink" title="binlog、redolog功能区别"></a>binlog、redolog功能区别</h3><ul>
+<li>redolog<ul>
+<li>保证crash-safe，事务的持久性</li>
+<li><strong>物理格式的日志</strong>，记录的是物理数据页面的修改的信息</li>
+<li>将随机写变成顺序写，提高MySQL吞吐</li>
+</ul>
+</li>
+<li>binlog：<ul>
+<li><strong>逻辑日志</strong>，没有记录数据页的更新细节，<em><strong>没有能力恢复数据页</strong></em></li>
+<li><strong>归档</strong>功能，redolog是循环写，起不到归档的作用</li>
+<li><em><strong>binlog复制：MySQL高可用的基础</strong></em><ul>
+<li><strong>主从复制</strong></li>
+<li>异构系统（如数据分析系统）会<strong>消费MySQL的binlog</strong>来更新自己的数据</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="崩溃恢复"><a href="#崩溃恢复" class="headerlink" title="崩溃恢复"></a>崩溃恢复</h3><ul>
+<li>判断规则<ol>
+<li>如果 redo log 里面的事务是完整的，也就是已经有了 commit 标识，则直接提交；</li>
+<li>如果 redo log 里面的事务只有完整的 prepare，则判断对应的事务 binlog 是否存在并完整：<br>a. 如果是，则提交事务<br>b. 否则，回滚事务<br>注：时刻 B 发生 crash 对应的就是 2(a) 的情况，崩溃恢复过程中事务会被提交</li>
+</ol>
+</li>
+<li>redo log 和 binlog 关联<ul>
+<li>通过共同数据字段， XID（<strong>为每个事务分配一个唯一的ID</strong>）</li>
+<li>崩溃恢复的时候，会按顺序扫描 redo log<ul>
+<li>如果碰到既有 prepare、又有 commit 的 redo log，就直接提交</li>
+<li>如果碰到只有 parepare、而没有 commit 的 redo log，就拿着 XID 去 binlog 找对应的事务</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>binlog 完整性判断<ul>
+<li>statement 格式的 binlog，最后会有 COMMIT</li>
+<li>row 格式的 binlog，最后会有一个 XID event </li>
+<li>在 MySQL 5.6.2 版本以后，引入了 binlog-checksum 参数，用来验证 binlog 内容的正确性<ul>
+<li>binlog可能由于<strong>磁盘原因</strong>，在<strong>日志中间</strong>出错，MySQL可以通过校验checksum来发现</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="异常点说明"><a href="#异常点说明" class="headerlink" title="异常点说明"></a>异常点说明</h3><ul>
+<li>时刻A<ul>
+<li>属于判断规则 2(b) 情况</li>
+<li><strong>redolog处于prepare阶段</strong>，<strong>binlog未写成功</strong>，在崩溃恢复时，事务<strong>回滚</strong></li>
+<li>由于binlog未写成功，所以无法传播给从库或异架数据库</li>
+</ul>
+</li>
+<li>时刻B<ul>
+<li>属于判断规则 2(a) 情况，事务提交</li>
+<li><strong>redolog处于prepare阶段</strong>，<strong>binlog写成功</strong>，在崩溃恢复时，事务<strong>提交</strong></li>
+<li>由于binlog写成功，所以可以传播给从库或异架数据库，数据保持一致<br>思考：为何MySQL这么设计？<ul>
+<li>binlog 写完以后 MySQL 发生崩溃，这时候 binlog 已经写入了，之后就会被从库（或者用这个 binlog 恢复出来的库）使用。所以，在主库上也要提交这个事务。采用这个策略，主库和备库的数据就保证了一致性。</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h3><p>《MySQL实战45讲》</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Storage/" rel="tag"># Storage</a>
+              <a href="/tags/MySQL/" rel="tag"># MySQL</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/01/04/consensus-algorithm/" rel="prev" title="分布式一致性算法介绍">
+      <i class="fa fa-chevron-left"></i> 分布式一致性算法介绍
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2020/01/09/mysql-transaction-isolation/" rel="next" title="MySQL -- 事务隔离">
+      MySQL -- 事务隔离 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9B%B4%E6%96%B0%E8%AF%AD%E5%8F%A5"><span class="nav-number">1.</span> <span class="nav-text">更新语句</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C%E8%BF%87%E7%A8%8B"><span class="nav-number">2.</span> <span class="nav-text">执行过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link"><span class="nav-number">3.</span> <span class="nav-text"></span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#binlog-Server"><span class="nav-number">4.</span> <span class="nav-text">binlog - Server</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#update-%E5%86%85%E9%83%A8%E6%B5%81%E7%A8%8B"><span class="nav-number">5.</span> <span class="nav-text">update 内部流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#sync-binlog-amp-innodb-flush-log-at-trx-commit-%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5"><span class="nav-number">6.</span> <span class="nav-text">sync_binlog &amp; innodb_flush_log_at_trx_commit 最佳实践</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%A4%E9%98%B6%E6%AE%B5%E6%8F%90%E4%BA%A4"><span class="nav-number">7.</span> <span class="nav-text">两阶段提交</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#binlog%E3%80%81redolog%E5%8A%9F%E8%83%BD%E5%8C%BA%E5%88%AB"><span class="nav-number">8.</span> <span class="nav-text">binlog、redolog功能区别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B4%A9%E6%BA%83%E6%81%A2%E5%A4%8D"><span class="nav-number">9.</span> <span class="nav-text">崩溃恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BC%82%E5%B8%B8%E7%82%B9%E8%AF%B4%E6%98%8E"><span class="nav-number">10.</span> <span class="nav-text">异常点说明</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">11.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="tlv"
+      src="/images/avatar.jpeg">
+  <p class="site-author-name" itemprop="name">tlv</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">tags</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 2015 – 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">tlv</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+<script src="/js/bookmark.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+  <script src="//cdn.jsdelivr.net/npm/quicklink@1/dist/quicklink.umd.js"></script>
+  <script>
+      window.addEventListener('load', () => {
+      quicklink({
+        timeout : 3000,
+        priority: true,
+        ignores : [uri => uri.includes('#'),uri => uri === 'http://example.com/2020/01/04/mysql-redo-binlog/',]
+      });
+      });
+  </script>
+
+</body>
+</html>

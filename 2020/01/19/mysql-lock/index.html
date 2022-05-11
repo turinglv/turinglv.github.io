@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.json"};
+  </script>
+
+  <meta name="description" content="Mysql 锁总结加锁机制 乐观锁 悲观锁  乐观锁与悲观锁是两种并发控制的思想，可用于解决丢失更新的问题：  乐观锁会”乐观的”假定大概率不会发生并发更新冲突，访问、处理数据过程中不加锁，只在更新数据时再根据版本号或时间戳判断是否有冲突，有则处理，无则提交事务 悲观锁会”悲观的”假定大概率会发生并发更新冲突，访问、处理数据前就加排他锁，在整个数据处理过程中锁定数据，事务提交或回滚后才释放锁；">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MySQL -- 锁">
+<meta property="og:url" content="http://example.com/2020/01/19/mysql-lock/index.html">
+<meta property="og:site_name" content="温故而知新">
+<meta property="og:description" content="Mysql 锁总结加锁机制 乐观锁 悲观锁  乐观锁与悲观锁是两种并发控制的思想，可用于解决丢失更新的问题：  乐观锁会”乐观的”假定大概率不会发生并发更新冲突，访问、处理数据过程中不加锁，只在更新数据时再根据版本号或时间戳判断是否有冲突，有则处理，无则提交事务 悲观锁会”悲观的”假定大概率会发生并发更新冲突，访问、处理数据前就加排他锁，在整个数据处理过程中锁定数据，事务提交或回滚后才释放锁；">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/images/mysql-lock/0823959122513a6fe17bc80567715e03.png">
+<meta property="og:image" content="http://example.com/images/mysql-lock/7cf6a3bf90d72d1f0fc156ececdfb0ce.jpg">
+<meta property="og:image" content="http://example.com/images/mysql-lock/mysql-innodb-dead-lock.jpg">
+<meta property="og:image" content="http://example.com/images/mysql-lock//image-20210908144035137.png">
+<meta property="og:image" content="http://example.com/images/mysql-lock//image-20210908144122524.png">
+<meta property="og:image" content="http://example.com/images/mysql-lock//image-20210908151745952.png">
+<meta property="article:published_time" content="2020-01-19T16:00:00.000Z">
+<meta property="article:modified_time" content="2022-05-11T13:27:38.360Z">
+<meta property="article:author" content="tlv">
+<meta property="article:tag" content="Storage">
+<meta property="article:tag" content="MySQL">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/images/mysql-lock/0823959122513a6fe17bc80567715e03.png">
+
+<link rel="canonical" href="http://example.com/2020/01/19/mysql-lock/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>MySQL -- 锁 | 温故而知新</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">温故而知新</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories<span class="badge">7</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives<span class="badge">8</span></a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2020/01/19/mysql-lock/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpeg">
+      <meta itemprop="name" content="tlv">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="温故而知新">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          MySQL -- 锁
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2020-01-20 00:00:00" itemprop="dateCreated datePublished" datetime="2020-01-20T00:00:00+08:00">2020-01-20</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-05-11 21:27:38" itemprop="dateModified" datetime="2022-05-11T21:27:38+08:00">2022-05-11</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Storage/" itemprop="url" rel="index"><span itemprop="name">Storage</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Storage/MySQL/" itemprop="url" rel="index"><span itemprop="name">MySQL</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>19k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>18 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="Mysql-锁总结"><a href="#Mysql-锁总结" class="headerlink" title="Mysql 锁总结"></a>Mysql 锁总结</h2><h3 id="加锁机制"><a href="#加锁机制" class="headerlink" title="加锁机制"></a>加锁机制</h3><ul>
+<li>乐观锁</li>
+<li>悲观锁</li>
+</ul>
+<p>乐观锁与悲观锁是两种并发控制的思想，可用于解决丢失更新的问题：</p>
+<ol>
+<li>乐观锁会”乐观的”假定大概率不会发生并发更新冲突，访问、处理数据过程中不加锁，只在更新数据时再根据版本号或时间戳判断是否有冲突，有则处理，无则提交事务</li>
+<li>悲观锁会”悲观的”假定大概率会发生并发更新冲突，访问、处理数据前就加排他锁，在整个数据处理过程中锁定数据，事务提交或回滚后才释放锁；</li>
+</ol>
+<h3 id="兼容性"><a href="#兼容性" class="headerlink" title="兼容性"></a>兼容性</h3><ul>
+<li>共享锁（读锁、S Lock）</li>
+<li>排它锁（写锁、X Lock）</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>X</th>
+<th>S</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>X</td>
+<td>不兼容</td>
+<td>不兼容</td>
+</tr>
+<tr>
+<td>S</td>
+<td>不兼容</td>
+<td>兼容</td>
+</tr>
+</tbody></table>
+<h3 id="锁粒度"><a href="#锁粒度" class="headerlink" title="锁粒度"></a>锁粒度</h3><ul>
+<li>全局锁</li>
+<li>表锁</li>
+<li>页锁</li>
+<li>行锁</li>
+</ul>
+<h3 id="锁类型"><a href="#锁类型" class="headerlink" title="锁类型"></a>锁类型</h3><ul>
+<li>MetaDataLock（元数据锁 MDL）</li>
+<li>行锁</li>
+<li>gap锁</li>
+<li>next-key lock</li>
+<li>意向锁</li>
+<li>插入意向锁</li>
+<li>自增锁</li>
+</ul>
+<h2 id="全局锁"><a href="#全局锁" class="headerlink" title="全局锁"></a>全局锁</h2><p>全局锁就是对整个数据库实例加锁。MySQL 提供了一个加全局读锁的方法，命令是 Flush tables with read lock (FTWRL)。<br>之后其他线程的以下语句会被阻塞：数据更新语句（数据的增删改）、数据定义语句（包括建表、修改表结构等）和更新类事务的提交语句。<br>全局锁的典型使用场景是，做全库逻辑备份。也就是把整库每个表都 select 出来存成文本。<br>FTWRL通过持有以下两把全局的MDL(MetaDataLock)锁：</p>
+<ul>
+<li>全局读锁(lock_global_read_lock) 会导致所有的更新操作被堵塞</li>
+<li>全局COMMIT锁(make_global_read_lock_block_commit) 会导致所有的活跃事务无法提交</li>
+</ul>
+<p>FLUSH TABLES WITH READ LOCK执行后整个系统会一直处于只读状态，直到显示执行UNLOCK TABLES</p>
+<h2 id="MDL"><a href="#MDL" class="headerlink" title="MDL"></a>MDL</h2><h3 id="MDL作用"><a href="#MDL作用" class="headerlink" title="MDL作用"></a>MDL作用</h3><p>​    为了在并发环境下维护表元数据的数据一致性，在表上有活动事务（显式或隐式）的时候，不可以对元数据进行写入操作。因此从MySQL5.5版本开始引入了MDL锁（metadata lock），来保护表的元数据信息，用于解决或者保证DDL操作与DML操作之间的一致性。<br>​    对于引入MDL，其主要解决了2个问题，一个是事务隔离问题，比如在可重复隔离级别下，会话A在2次查询期间，会话B对表结构做了修改，两次查询结果就会不一致，无法满足可重复读的要求；另外一个是数据复制的问题，比如会话A执行了多条更新语句期间，另外一个会话B做了表结构变更并且先提交，就会导致slave在重做时，先重做alter，再重做update时就会出现复制错误的现象。<br>​    所以在对表进行上述操作时，如果表上有活动事务（未提交或回滚），请求写入的会话会等待在Metadata lock wait 。</p>
+<table>
+<thead>
+<tr>
+<th>会话1</th>
+<th>会话2</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>BEGIN;</td>
+<td></td>
+</tr>
+<tr>
+<td>SELECT * FROM XXX</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td>DROP TABLE XXX</td>
+</tr>
+<tr>
+<td>SELECT * FROM XXX</td>
+<td></td>
+</tr>
+</tbody></table>
+<p>​    若没有MDL锁的保护，则事务2可以直接执行DDL操作，并且导致事务1出错，5.1版本即是如此。5.5版本加入MDL锁就在于保护这种情况的发生，由于事务1开启了查询，那么获得了MDL锁，锁的模式为SHARED_READ，事务2要执行DDL，则需获得EXCLUSIVE锁，两者互斥，所以事务2需要等待。</p>
+<h3 id="MDL锁类型"><a href="#MDL锁类型" class="headerlink" title="MDL锁类型"></a>MDL锁类型</h3><p>由于MySQL是Server-Engine架构，尽管InnoDB层已经有了IS、IX这样的意向锁，所以MDL锁是在Server中实现</p>
+<p>MDL锁还能实现其他粒度级别的锁，比如全局锁、库级别的锁、表空间级别的锁，这是InnoDB存储引擎层不能直接实现的锁</p>
+<p>与InnoDB锁的实现一样，MDL锁也是类似对一颗树的各个对象从上至下进行加锁。但是MDL锁对象的层次更多，简单来看有如下的层次：</p>
+<img src="/images/mysql-lock/0823959122513a6fe17bc80567715e03.png" alt="img" style="zoom:150%;" />
+
+<p>上图中显示了最常见的4种MDL锁的对象，并且注明了常见的SQL语句会触发的锁。</p>
+<p>与InnoDB层类似的是，某些类型的MDL锁会从上往下一层层进行加锁。</p>
+<p>比如LOCK TABLE … WRITE这样的SQL语句，其首先会对GLOBAL级别加INTENTION_EXCLUSIVE锁，再对SCHEMA级别加INTENTION_EXCLUSIVE锁，最后对TABLE级别加SHARED_NO_READ_WRITE锁</p>
+<h3 id="MDL锁对象、范围"><a href="#MDL锁对象、范围" class="headerlink" title="MDL锁对象、范围"></a>MDL锁对象、范围</h3><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>含义</th>
+<th>范围/对象</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GLOBAL</td>
+<td>全局锁（MySQL实例）</td>
+<td>范围</td>
+<td>主要作用是防止DDL和写操作的过程中执行 set golbal_read_only =on 或<br />flush tables with read <em>lock</em>;</td>
+</tr>
+<tr>
+<td>COMMIT</td>
+<td>提交保护锁</td>
+<td>范围</td>
+<td>主要作用是执行flush tables with read <em>lock</em>后，防止已经开始在执行的写事务提交</td>
+</tr>
+<tr>
+<td>SCHEMA</td>
+<td>库锁</td>
+<td>对象</td>
+<td></td>
+</tr>
+<tr>
+<td>TABLE</td>
+<td>表锁</td>
+<td>对象</td>
+<td></td>
+</tr>
+<tr>
+<td>FUNCTION</td>
+<td>函数锁</td>
+<td>对象</td>
+<td></td>
+</tr>
+<tr>
+<td>PROCEDURE</td>
+<td>存储过程锁</td>
+<td>对象</td>
+<td></td>
+</tr>
+<tr>
+<td>TRIGGER</td>
+<td>触发器锁</td>
+<td>对象</td>
+<td></td>
+</tr>
+<tr>
+<td>EVENT</td>
+<td>事件锁</td>
+<td>对象</td>
+<td></td>
+</tr>
+</tbody></table>
+<h3 id="MDL持有时间"><a href="#MDL持有时间" class="headerlink" title="MDL持有时间"></a>MDL持有时间</h3><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MDL_STATEMENT</td>
+<td>从语句开始执行时获取，到语句执行结束时释放。</td>
+</tr>
+<tr>
+<td>MDL_TRANSACTION</td>
+<td>在一个事务中涉及所有表获取MDL，一直到事务commit或者rollback(线程中终清理)才释放。</td>
+</tr>
+<tr>
+<td>MDL_EXPLICIT</td>
+<td>需要MDL_context::release_lock()显式释放。语句或者事务结束,也仍然持有，如Lock table, flush .. with lock语句等。</td>
+</tr>
+</tbody></table>
+<h3 id="MDL锁模式"><a href="#MDL锁模式" class="headerlink" title="MDL锁模式"></a>MDL锁模式</h3><p>数据库锁一般将锁划分为读锁(共享锁)和写锁(排它锁)，为了进一步提高并发性，还会加入意向共享锁和意向排它锁。</p>
+<p>mysql设计得更复杂，如下表：</p>
+<table>
+<thead>
+<tr>
+<th>锁模式</th>
+<th>对应SQL</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MDL_INTENTION_EXCLUSIVE</td>
+<td>意向排他锁 GLOBAL对象、SCHEMA对象操作会加此锁</td>
+</tr>
+<tr>
+<td>MDL_SHARED</td>
+<td>只访问元数据 比如表结构 FLUSH TABLES with READ LOCK</td>
+</tr>
+<tr>
+<td>MDL_SHARED_HIGH_PRIO</td>
+<td>仅对MyISAM存储引擎有效，用于访问information_scheam表</td>
+</tr>
+<tr>
+<td>MDL_SHARED_READ</td>
+<td>SELECT查询 访问表结构并且读表数据</td>
+</tr>
+<tr>
+<td>MDL_SHARED_WRITE</td>
+<td>DML语句 访问表结构并且写表数据</td>
+</tr>
+<tr>
+<td>MDL_SHARED_WRITE_LOW_PRIO</td>
+<td>仅对MyISAM存储引擎有效</td>
+</tr>
+<tr>
+<td>MDL_SHARED_UPGRADABLE</td>
+<td>ALTER TABLE是mysql5.6引入的新的metadata lock, 在alter table/create index/drop index会加该锁。特点是允许DML，防止DDL；</td>
+</tr>
+<tr>
+<td>MDL_SHARED_READ_ONLY</td>
+<td>LOCK xxx READ</td>
+</tr>
+<tr>
+<td>MDL_SHARED_NO_WRITE</td>
+<td>FLUSH TABLES xxx,yyy,zzz READ可升级锁，访问表结构并且读写表数据，并且禁止其它事务写。</td>
+</tr>
+<tr>
+<td>MDL_SHARED_NO_READ_WRITE</td>
+<td>FLUSH TABLE xxx WRITE可升级锁，访问表结构并且读写表数据，并且禁止其它事务读写。</td>
+</tr>
+<tr>
+<td>MDL_EXCLUSIVE</td>
+<td>ALTER TABLE xxx PARTITION BY …防止其他线程读写元数据</td>
+</tr>
+</tbody></table>
+<h3 id="Online-DDL过程"><a href="#Online-DDL过程" class="headerlink" title="Online DDL过程"></a>Online DDL过程</h3><ol>
+<li>拿MDL写锁 ： 当A、B线程都来做DDL的时候，如A拿到了DDL写锁，B就阻塞，其它读数据的线程阻塞，该步执行时间短</li>
+<li>DDL执行准备： 当A、B线程都来做DDL的时候，如A拿到了DDL写锁，B任然阻塞，其它读数据的线程阻塞，该步执行时间短</li>
+<li>降级成MDL读锁 ： 当A、B线程都来做DDL的时候，如A拿到了DDL写锁，B任然阻塞，其它读数据的线程可以读取数据，该步执行时间短</li>
+<li>DDL核心执行：（耗时最多的） 当A、B线程都来做DDL的时候，如A拿到了DDL写锁，B任然阻塞，其它读数据的线程可以读取数据（关键是其它线程可以读取数据），该步执行时间长，所以号称在线DDL，因为影响业务线程读取数据的时间很短</li>
+<li>升级成MDL写锁: 当A、B线程都来做DDL的时候，如A拿到了DDL写锁，B任然阻塞，，其它读数据的线程阻塞，该步执行时间短</li>
+<li>DDL最终提交 ： 当A、B线程都来做DDL的时候，如A拿到了DDL写锁，B任然阻塞，，其它读数据的线程阻塞，该步执行时间短</li>
+<li>释放MDL锁 ： 当A、B线程都来做DDL的时候，如A释放写锁，B拿到DDL锁，，其它读数据的线程阻塞，该步执行时间短，继续循环上面个的步骤</li>
+</ol>
+<h2 id="表级锁"><a href="#表级锁" class="headerlink" title="表级锁"></a>表级锁</h2><p><strong>表锁的语法是 lock tables … read/write</strong><br>可以用 unlock tables 主动释放锁，也可以在客户端断开的时候自动释放。<br>需要注意，lock tables 语法除了会限制别的线程的读写外，也限定了本线程接下来的操作对象</p>
+<p>例如：<br>线程 A 中执行 lock tables t1 read, t2 write;<br>这个语句，则其他线程写 t1、读写 t2 的语句都会被阻塞。<br>同时，线程 A 在执行 unlock tables 之前，也只能执行读 t1、读写 t2 的操作。连写 t1 都不允许，自然也不能访问其他表</p>
+<p><strong>InnoDB 这种支持行锁的引擎</strong>，一般不使用 lock tables 命令来控制并发，毕竟锁住整个表的影响面还是太大</p>
+<p>MySQL 5.5 版本中引入了 MDL，当对一个表做增删改查操作的时候，加 MDL 读锁；当要对表做结构变更操作的时候，加 MDL 写锁。</p>
+<p>MDL 锁是系统默认添加的</p>
+<ul>
+<li><p>读锁之间不互斥，因此你可以有多个线程同时对一张表增删改查。</p>
+</li>
+<li><p>读写锁之间、写锁之间是互斥的，用来保证变更表结构操作的安全性。因此，如果有两个线程要同时给一个表加字段，其中一个要等另一个执行完才能开始执行。</p>
+</li>
+</ul>
+<p>Table MDL事故分析：给一个小表加个字段，导致整个库挂了</p>
+<img src="/images/mysql-lock/7cf6a3bf90d72d1f0fc156ececdfb0ce.jpg" alt="img" style="zoom:50%;" />
+
+<p>session A 先启动，这时候会对表 t 加一个 MDL 读锁。由于 session B 需要的也是 MDL 读锁，因此可以正常执行。<br>session C 会被 blocked，是因为 session A 的 MDL 读锁还没有释放，而 session C 需要 MDL 写锁，因此只能被阻塞。<br><strong>因为：</strong>申请MDL锁的操作会形成一个队列，队列中写锁获取优先级高于读锁。一旦出现写锁等待，不但当前操作会被阻塞，同时还会阻塞后续该表的所有操作。事务一旦申请到MDL锁后，直到事务执行完才会将锁释放。<br>所以session D也会因为session C而被blocked</p>
+<p>针对以上事故最佳实践：</p>
+<ol>
+<li>解决长事务，事务不提交，就会一直占着 MDL 锁。要考虑先暂停 DDL，或者 kill 掉这个长事务</li>
+<li>比较理想的机制是，在 alter table 语句里面设定等待时间，如果在这个指定的等待时间里面能够拿到 MDL 写锁最好，<br>拿不到也不要阻塞后面的业务语句，先放弃。之后开发人员或者 DBA 再通过重试命令重复这个过程（注意mysql版本，是否支持该语法）</li>
+</ol>
+<h2 id="意向锁"><a href="#意向锁" class="headerlink" title="意向锁"></a>意向锁</h2><ul>
+<li>意向锁是一种特殊的<strong>表级锁</strong>，意向锁是为了让 InnoDB 多粒度的锁能共存而设计的</li>
+<li>意向锁分为：<ul>
+<li><strong>意向共享锁</strong>(intention shared lock, IS)，它预示着，事务有意向对表中的某些行加共享S锁</li>
+<li><strong>意向排它锁</strong>(intention exclusive lock, IX)，它预示着，事务有意向对表中的某些行加排它X锁</li>
+<li>select … lock in share mode，要设置<strong>IS锁</strong>；select … for update，要设置<strong>IX锁</strong>；</li>
+</ul>
+</li>
+<li>意向锁协议(intention locking protocol)：<ul>
+<li>事务要获得某些行的<strong>S锁</strong>，必须先获得表的<strong>IS锁</strong></li>
+<li>事务要获得某些行的<strong>X锁</strong>，必须先获得表的<strong>IX锁</strong></li>
+<li>意向共享锁和意向排他锁都是系统自动添加和自动释放的，整个过程无需人工干预</li>
+</ul>
+</li>
+<li>主要是用来辅助表级和行级锁的冲突判断，因为 Innodb 支持行级锁，如果没有意向锁，则判断表锁和行锁冲突的时候需要遍历表上所有行锁，有了意向锁，则只要判断表是否存在意向锁就可以知道是否有行锁了。表级别锁的兼容性如下表：</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>是否兼容当前锁模式</th>
+<th>X</th>
+<th>IX</th>
+<th>S</th>
+<th>IS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>X</td>
+<td>冲突</td>
+<td>冲突</td>
+<td>冲突</td>
+<td>冲突</td>
+</tr>
+<tr>
+<td>IX</td>
+<td>冲突</td>
+<td>兼容</td>
+<td>冲突</td>
+<td>兼容</td>
+</tr>
+<tr>
+<td>S</td>
+<td>冲突</td>
+<td>冲突</td>
+<td>兼容</td>
+<td>兼容</td>
+</tr>
+<tr>
+<td>IS</td>
+<td>冲突</td>
+<td>兼容</td>
+<td>兼容</td>
+<td>兼容</td>
+</tr>
+</tbody></table>
+<p>意向锁与意向锁兼容，IX、IS 自身以及相互都兼容，不互斥，因为意向锁仅表示下一层级加什么类型的锁，不代表当前层加什么类型的锁；<br>IX 和表级 X、S 互斥；IS 和表级 X 锁互斥。其兼容性正好体现了其作用</p>
+<p><strong>比如</strong>：事务A要在一个表上加S锁，如果表中的一行已被事务B加了X锁，那么该锁的申请也应被阻塞<br>如果表中的数据很多，逐行检查锁标志的开销将很大，系统的性能将会受到影响，因为事务B已经设置了IX锁，所以无需逐行遍历了</p>
+<h2 id="自增锁"><a href="#自增锁" class="headerlink" title="自增锁"></a>自增锁</h2><ul>
+<li>自增锁是一种特殊的表级锁，主要用于事务中插入自增字段，也就是我们最常用的自增主键id</li>
+</ul>
+<ol>
+<li>自增锁不是事务锁，每次申请完就马上释放，以便其它事务再申请</li>
+<li>MySQL 5.0，自增锁的范围是语句级别<ul>
+<li>一个语句申请了自增锁，需要等到语句结束后才会释放，<em><strong>影响并发度</strong></em></li>
+</ul>
+</li>
+<li>MySQL 5.1.22，引入了一个新策略，新增参数innodb_autoinc_lock_mode，默认值为1<ul>
+<li><code>innodb_autoinc_lock_mode=0</code>，表示采用之前MySQL 5.0的策略，<strong>语句级别</strong></li>
+<li><code>innodb_autoinc_lock_mode=1</code><ul>
+<li>普通<code>INSERT</code>语句，自增锁在申请后<strong>马上释放</strong>，包括批量的<code>INSERT INTO...VALUES</code></li>
+<li>类似<code>INSERT...SELECT</code>这样的<strong>批量插入</strong>（无法明确数量）的语句，还是<strong>语句级别</strong></li>
+</ul>
+</li>
+<li><code>innodb_autoinc_lock_mode=2</code>，所有的申请自增id的动作都是<strong>申请后就释放锁</strong></li>
+</ul>
+</li>
+</ol>
+<h2 id="插入意向锁（Insert-Intention-Locks）"><a href="#插入意向锁（Insert-Intention-Locks）" class="headerlink" title="插入意向锁（Insert Intention Locks）"></a>插入意向锁（Insert Intention Locks）</h2><p><a href="https://link.juejin.cn/?target=https://dev.mysql.com/doc/refman/8.0/en/innodb-locking.html%23innodb-insert-intention-locks">MySql 手册</a> 是如何解释 <strong>InnoDB</strong> 中的<code>插入意向锁</code>的：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">An insert intention lock is a type of gap lock set by INSERT operations prior to row insertion. This lock signals the intent to insert in such a way that multiple transactions inserting into the same index gap need not wait for each other if they are not inserting at the same position within the gap. Suppose that there are index records with values of 4 and 7. Separate transactions that attempt to insert values of 5 and 6, respectively, each lock the gap between 4 and 7 with insert intention locks prior to obtaining the exclusive lock on the inserted row, but do not block each other because the rows are nonconflicting.</span><br></pre></td></tr></table></figure>
+
+<p><code>插入意向锁</code>的特性可以分成两部分：</p>
+<ol>
+<li><code>插入意向锁</code>是一种特殊的<code>间隙锁</code> —— <code>间隙锁</code>可以锁定<strong>开区间</strong>内的部分记录。</li>
+<li>插入意向锁是在插入一条记录行前，由 <strong>INSERT</strong> 操作产生的一种间隙锁</li>
+<li><code>插入意向锁</code>之间互不排斥，所以即使多个事务在同一区间插入多条记录，只要记录本身（<code>主键</code>、<code>唯一索引</code>）不冲突，那么事务之间就不会出现<strong>冲突等待</strong>。</li>
+<li>虽然<code>插入意向锁</code>中含有<code>意向锁</code>三个字，但是它并不属于<code>意向锁</code>而属于<code>间隙锁</code>，因为<code>意向锁</code>是<strong>表锁</strong>而<code>插入意向锁</code>是<strong>行锁</strong></li>
+</ol>
+<h2 id="行锁、Gap锁、Next-key-Lock"><a href="#行锁、Gap锁、Next-key-Lock" class="headerlink" title="行锁、Gap锁、Next-key Lock"></a>行锁、Gap锁、Next-key Lock</h2><h3 id="行锁"><a href="#行锁" class="headerlink" title="行锁"></a>行锁</h3><ol>
+<li>MySQL的行锁是在<strong>存储引擎层</strong>实现的</li>
+<li>MyISAM不支持行锁，而InnoDB支持行锁，这是InnoDB替代MyISAM的一个重要原因</li>
+</ol>
+<h4 id="两阶段锁"><a href="#两阶段锁" class="headerlink" title="两阶段锁"></a>两阶段锁</h4><ol>
+<li>两阶段锁<ul>
+<li>在InnoDB事务中，行锁是在<strong>需要的时候</strong>加上</li>
+<li>但并不是在不需要了就立刻释放，而是要等待<strong>事务结束</strong>后才释放</li>
+</ul>
+</li>
+<li>如果事务需要<strong>锁定多行</strong>，要就把最可能<strong>造成锁冲突</strong>和<strong>影响并发度</strong>的锁尽可能<strong>往后放</strong></li>
+</ol>
+<h4 id="死锁"><a href="#死锁" class="headerlink" title="死锁"></a>死锁</h4><img src="/images/mysql-lock/mysql-innodb-dead-lock.jpg" alt="img" style="zoom:50%;" />
+
+<ol>
+<li>事务A在等待事务B释放id=2的行锁，事务B在等待事务A释放id=1的行锁，导致<strong>死锁</strong></li>
+<li>当出现死锁后，有2种处理策略<ul>
+<li>等待，直至超时（不推荐）<ul>
+<li><strong>业务有损</strong>：业务会出现大量超时</li>
+</ul>
+</li>
+<li>死锁检测（推荐）<ul>
+<li><strong>业务无损</strong>：业务设计不会将死锁当成严重错误，当出现死锁时可采取：<em><strong>事务回滚+业务重试</strong></em></li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<h4 id="锁等待"><a href="#锁等待" class="headerlink" title="锁等待"></a>锁等待</h4><ol>
+<li>由参数<code>innodb_lock_wait_timeout</code>控制（MySQL 5.7.15引入）</li>
+<li>默认是50s，对于<strong>在线服务</strong>来说是无法接受的</li>
+<li>但也<strong>不能设置成很小的值</strong>，因为如果实际上并不是死锁，只是简单的锁等待，会出现很多<strong>误伤</strong></li>
+</ol>
+<h4 id="死锁检测（推荐）"><a href="#死锁检测（推荐）" class="headerlink" title="死锁检测（推荐）"></a>死锁检测（推荐）</h4><ol>
+<li><p>发现死锁后，主动回滚锁链条中的某一事务，让其他事务继续执行</p>
+<ul>
+<li>需要设置参数<code>innodb_deadlock_detect</code></li>
+</ul>
+</li>
+<li><p>触发死锁检测：<strong>要加锁访问的行上有锁</strong></p>
+<ul>
+<li><strong>一致性读不会加锁</strong></li>
+</ul>
+</li>
+<li><p>死锁检测并不需要扫描所有事务</p>
+<ul>
+<li>某个时刻，事务等待状态为：事务B等待事务A，事务D等待事务C</li>
+<li>新来事务E，事务E需要等待D，那么只会判断事务CDE是否会形成死锁</li>
+</ul>
+</li>
+<li><p>CPU消耗高</p>
+<ul>
+<li>每个新来的线程发现自己要加锁访问的行上有锁<ul>
+<li>会去判断会不会<strong>由于自己的加入而导致死锁</strong>，总体时间复杂度为 O(n²)</li>
+</ul>
+</li>
+<li>假设有1000个并发线程，最坏情况下死锁检测的操作量级为100W（1000²）<br>解释：假设有 1000 个并发线程，都要同时更新<strong>同一行</strong>，<br>​            <strong>每个新来的被堵住的线程，都要判断会不会由于自己的加入导致了死锁</strong><br>​            第 1 个线程来的时候检测数是 0；<br>​            第 2 个线程来的时候，需要检测【线程1】有没有被别人锁住；<br>​            第 3 个线程来的时候，需要检测【线程1，线程2】有没有被其他线程锁住，<br>​            以此类推，第 n 个线程来的时候，检测数是 n - 1，<br>​            所以总的检测数是 0 + 1 + 2 + 3 + 。。。+ (n - 1) = n(n -1)/2，所以时间复杂度应该是 O(n²)<br>​            <strong>也就是 1000 个并发线程同时操作同一行，那么死锁检测操作就是 100 万这个量级的</strong></li>
+</ul>
+</li>
+<li><p>解决方法</p>
+<ul>
+<li>如果业务能确保一定不会出现死锁，可以<strong>临时关闭死锁检测</strong>，但存在一定的风险（超时）</li>
+<li>控制并发度，如果并发下降，那么死锁检测的成本就会降低，这需要在数据库服务端实现<ul>
+<li>如果有<strong>中间件</strong>，可以在中间件实现</li>
+<li>如果能修改<strong>MySQL源码</strong>，可以在MySQL内部实现</li>
+</ul>
+</li>
+<li>设计上的优化<ul>
+<li>将一行改成<strong>逻辑上的多行</strong>来<strong>减少锁冲突</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">mysql<span class="operator">&gt;</span> <span class="keyword">SHOW</span> VARIABLES <span class="keyword">LIKE</span> <span class="string">&#x27;%innodb_deadlock_detect%&#x27;</span>;</span><br><span class="line"><span class="operator">+</span><span class="comment">------------------------+-------+</span></span><br><span class="line"><span class="operator">|</span> Variable_name          <span class="operator">|</span> <span class="keyword">Value</span> <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">------------------------+-------+</span></span><br><span class="line"><span class="operator">|</span> innodb_deadlock_detect <span class="operator">|</span> <span class="keyword">ON</span>    <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">------------------------+-------+</span></span><br><span class="line"></span><br><span class="line">mysql<span class="operator">&gt;</span> <span class="keyword">SHOW</span> VARIABLES <span class="keyword">LIKE</span> <span class="string">&#x27;%innodb_lock_wait_timeout%&#x27;</span>;</span><br><span class="line"><span class="operator">+</span><span class="comment">--------------------------+-------+</span></span><br><span class="line"><span class="operator">|</span> Variable_name            <span class="operator">|</span> <span class="keyword">Value</span> <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">--------------------------+-------+</span></span><br><span class="line"><span class="operator">|</span> innodb_lock_wait_timeout <span class="operator">|</span> <span class="number">30</span>    <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">--------------------------+-------+</span></span><br></pre></td></tr></table></figure>
+<h3 id="GAP-Lock"><a href="#GAP-Lock" class="headerlink" title="GAP Lock"></a>GAP Lock</h3><ol>
+<li>产生幻读的原因：行锁只能锁住行，新插入记录这个动作，要更新的是记录之间的<strong>间隙</strong></li>
+<li>为了解决幻读，InnoDB引入了新的锁：<strong>间隙锁</strong>（<strong>Gap Lock</strong>）</li>
+<li>间隙锁的引入，可能会导致同样的语句锁住更大的范围，这其实是影响了并发度的</li>
+</ol>
+<h4 id="Gap-Lock-作用场景"><a href="#Gap-Lock-作用场景" class="headerlink" title="Gap Lock 作用场景"></a>Gap Lock 作用场景</h4><ol>
+<li>对主键或唯一索引，如果当前读时，where条件全部精确命中(=或者in)，这种场景本身就不会出现幻读，所以只会加行记录锁</li>
+<li>没有索引的列，当前读操作时，会加全表gap锁，生产环境要注意</li>
+<li>非唯一索引列，如果where条件部分命中(&gt;、&lt;、like等)或者全未命中，则会加附近Gap间隙锁。<br>例如，某表数据如下，非唯一索引2,6,9,9,11,15。如下语句要操作非唯一索引列9的数据，gap锁将会锁定的列是(6,11]，该区间内无法插入数据。</li>
+</ol>
+<h4 id="Gap-Lock冲突关系"><a href="#Gap-Lock冲突关系" class="headerlink" title="Gap Lock冲突关系"></a>Gap Lock冲突关系</h4><p>跟<strong>间隙锁</strong>存在冲突关系的是<strong>往这个间隙插入一个记录的操作</strong>，<strong>间隙锁之间不会相互冲突</strong></p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> `t` (</span><br><span class="line">    `id` <span class="type">INT</span>(<span class="number">11</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `c` <span class="type">INT</span>(<span class="number">11</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `d` <span class="type">INT</span>(<span class="number">11</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    <span class="keyword">PRIMARY</span> KEY (`id`),</span><br><span class="line">    KEY `c` (`c`)</span><br><span class="line">) ENGINE<span class="operator">=</span>InnoDB;</span><br><span class="line"></span><br><span class="line"><span class="keyword">INSERT</span> <span class="keyword">INTO</span> t <span class="keyword">VALUES</span> (<span class="number">0</span>,<span class="number">0</span>,<span class="number">0</span>),(<span class="number">5</span>,<span class="number">5</span>,<span class="number">5</span>),(<span class="number">10</span>,<span class="number">10</span>,<span class="number">10</span>),(<span class="number">15</span>,<span class="number">15</span>,<span class="number">15</span>),(<span class="number">20</span>,<span class="number">20</span>,<span class="number">20</span>),(<span class="number">25</span>,<span class="number">25</span>,<span class="number">25</span>);</span><br></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />SELECT * FROM t WHERE c=7 LOCK IN SHARE MODE;</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">BEGIN;<br />SELECT * FROM t WHERE c=7 FOR UPDATE;</td>
+</tr>
+</tbody></table>
+<ol>
+<li>session B并不会被阻塞，因为表t里面并没有c=7的记录<ul>
+<li>因此session A加的是<strong>间隙锁</strong><code>(5,10)</code>，而session B也是在这个间隙加间隙锁</li>
+<li>两个session有共同的目标： 保护这个间隙，不允许插入值，但两者之间不冲突</li>
+</ul>
+</li>
+</ol>
+<h3 id="Next-Key-Lock"><a href="#Next-Key-Lock" class="headerlink" title="Next-Key Lock"></a>Next-Key Lock</h3><ol>
+<li>间隙锁和行锁合称<code>Next-Key Lock</code>，每个<code>Next-Key Lock</code>都是<strong>左开右闭</strong>区间</li>
+<li><code>SELECT * FROM t WHERE d=5 FOR UPDATE;</code>形成了7个<code>Next-Key Lock</code>，分别是<ul>
+<li><code>(-∞,0],(0,5],(5,10],(10,15],(15,20],(20,25],(25,+supremum]</code></li>
+<li><code>+supremum</code>：InnoDB给每一个索引加的一个<strong>不存在的最大值supremum</strong></li>
+</ul>
+</li>
+<li>约定：<code>Gap Lock</code>为<strong>左开右开</strong>区间，<code>Next-Key Lock</code>为<strong>左开右闭</strong>区间</li>
+</ol>
+<h2 id="MySql-加锁规则"><a href="#MySql-加锁规则" class="headerlink" title="MySql 加锁规则"></a>MySql 加锁规则</h2><h3 id="加锁逻辑"><a href="#加锁逻辑" class="headerlink" title="加锁逻辑"></a>加锁逻辑</h3><p><strong>两个“原则”、两个“优化”和一个“bug”</strong><br>MySQL 后面的版本可能会改变加锁策略，所以这个规则只限于截止到现在的最新版本，即 <strong>5.x 系列 &lt;=5.7.24</strong>，<strong>8.0 系列 &lt;=8.0.13</strong></p>
+<p>原则 1：加锁的基本单位是 next-key lock。next-key lock 是前开后闭区间。<br>原则 2：查找过程中访问到的对象才会加锁。<br>优化 1：索引上的等值查询，给唯一索引加锁的时候，next-key lock 退化为行锁。<br>优化 2：索引上的等值查询，向右遍历时且最后一个值不满足等值条件的时候，next-key lock 退化为间隙锁。<br>一个 bug：唯一索引上的范围查询会访问到不满足条件的第一个值为止。</p>
+<p>优化及回滚策略：</p>
+<ol>
+<li>锁是<strong>一个一个</strong>加的，为了避免死锁，对<strong>同一组资源</strong>，尽量按照<strong>相同的顺序</strong>访问</li>
+<li>在发生死锁的时候，<code>FOR UPDATE</code>占用的资源更多，<strong>回滚成本更大</strong>，因此选择回滚<code>LOCK IN SHARE MODE</code></li>
+</ol>
+<h3 id="锁兼容列表"><a href="#锁兼容列表" class="headerlink" title="锁兼容列表"></a>锁兼容列表</h3><table>
+<thead>
+<tr>
+<th>是否兼容</th>
+<th>gap</th>
+<th>insert intention</th>
+<th>record</th>
+<th>next-key</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>gap</strong></td>
+<td>是</td>
+<td>是</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr>
+<td><strong>insert intention</strong></td>
+<td><strong>否</strong></td>
+<td>是</td>
+<td>是</td>
+<td><strong>否</strong></td>
+</tr>
+<tr>
+<td><strong>record</strong></td>
+<td>是</td>
+<td>是</td>
+<td><strong>否</strong></td>
+<td><strong>否</strong></td>
+</tr>
+<tr>
+<td><strong>next-key</strong></td>
+<td>是</td>
+<td>是</td>
+<td><strong>否</strong></td>
+<td><strong>否</strong></td>
+</tr>
+</tbody></table>
+<h2 id="加锁、死锁分析"><a href="#加锁、死锁分析" class="headerlink" title="加锁、死锁分析"></a>加锁、死锁分析</h2><p><strong>没有明确说明的情况下 均为RR级别</strong></p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> `t` (</span><br><span class="line">  `id` <span class="type">int</span>(<span class="number">11</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  `c` <span class="type">int</span>(<span class="number">11</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  `d` <span class="type">int</span>(<span class="number">11</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  `e` <span class="type">int</span>(<span class="number">11</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span></span><br><span class="line">  <span class="keyword">PRIMARY</span> KEY (`id`),</span><br><span class="line">  KEY `c` (`c`),</span><br><span class="line">  <span class="keyword">UNIQUE</span> KEY `d` (`d`)</span><br><span class="line">) ENGINE<span class="operator">=</span>InnoDB;</span><br><span class="line"></span><br><span class="line"><span class="keyword">insert</span> <span class="keyword">into</span> t <span class="keyword">values</span>(<span class="number">0</span>,<span class="number">0</span>,<span class="number">0</span>,<span class="number">0</span>),(<span class="number">5</span>,<span class="number">5</span>,<span class="number">5</span>,<span class="number">5</span>),</span><br><span class="line">(<span class="number">10</span>,<span class="number">10</span>,<span class="number">10</span>,<span class="number">10</span>),(<span class="number">15</span>,<span class="number">15</span>,<span class="number">15</span>,<span class="number">15</span>),(<span class="number">20</span>,<span class="number">20</span>,<span class="number">20</span>,<span class="number">20</span>),(<span class="number">25</span>,<span class="number">25</span>,<span class="number">25</span>,<span class="number">25</span>);</span><br></pre></td></tr></table></figure>
+
+<h3 id="加锁分析"><a href="#加锁分析" class="headerlink" title="加锁分析"></a>加锁分析</h3><h4 id="唯一索引"><a href="#唯一索引" class="headerlink" title="唯一索引"></a>唯一索引</h4><ol>
+<li><p>等值查询：命中降级成 Row Lock</p>
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+<th align="left">session C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />UPDATE t SET d=d+1 WHERE id=10;</td>
+<td align="left"></td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES(1,1,1,1); <br />(Query OK)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES(16,16,16,16); <br />(Query OK)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=5; <br />(Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=10; <br />(Blocked)</td>
+</tr>
+</tbody></table>
+<p>session A持有的锁：<code>PRIMARY:X Lock:10</code></p>
+</li>
+<li><p>等值查询：不命中降级（<strong>Next-Key Lock降级为Gap Lock</strong>）</p>
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+<th align="left">session C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />UPDATE t SET d=d+1 WHERE id=7;</td>
+<td align="left"></td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES(1,1,1,1); <br />(Query OK)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES(8,8,8,8);<br />(Blocked)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=5;<br />(Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=10; <br />(Query OK)</td>
+</tr>
+</tbody></table>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- session B Blocked</span></span><br><span class="line">mysql<span class="operator">&gt;</span> <span class="keyword">SELECT</span> locked_index,locked_type,waiting_lock_mode,blocking_lock_mode <span class="keyword">FROM</span> sys.innodb_lock_waits <span class="keyword">WHERE</span> locked_table<span class="operator">=</span><span class="string">&#x27;`test`.`t`&#x27;</span>;</span><br><span class="line"><span class="operator">+</span><span class="comment">--------------+-------------+-------------------+--------------------+</span></span><br><span class="line"><span class="operator">|</span> locked_index <span class="operator">|</span> locked_type <span class="operator">|</span> waiting_lock_mode <span class="operator">|</span> blocking_lock_mode <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">--------------+-------------+-------------------+--------------------+</span></span><br><span class="line"><span class="operator">|</span> <span class="keyword">PRIMARY</span>      <span class="operator">|</span> RECORD      <span class="operator">|</span> X,GAP             <span class="operator">|</span> X,GAP              <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">--------------+-------------+-------------------+--------------------+</span></span><br></pre></td></tr></table></figure>
+
+<p>session A持有的锁：<code>PRIMARY:Gap Lock:(5,10)</code></p>
+</li>
+<li><p>范围查询 – 起点降级（<strong>Next-Key Lock降级为Row Lock</strong>）</p>
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+<th align="left">session C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />SELECT * FROM t WHERE id&gt;=10 AND id&lt;11 FOR UPDATE;</td>
+<td align="left"></td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (8,8,8,8); <br />(Query OK)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (13,13,13,13); (Blocked)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=10; (Blocked)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=15; (Blocked)</td>
+</tr>
+</tbody></table>
+<p>条件会拆分成<code>=10</code>（<code>Row Lock</code>）和<code>&gt;10 &amp; &lt;11</code>，session A持有的锁：<code>PRIMARY:X Lock:10</code>+<code>PRIMARY:Next-Key Lock:(10,15]</code></p>
+</li>
+<li><p>范围查询 – 尾点延伸 （直到遍历到<strong>第一个不满足的值</strong>为止）</p>
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+<th align="left">session C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN;<br />SELECT * FROM t WHERE id&gt;10 AND id&lt;=15 FOR UPDATE;</td>
+<td align="left"></td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (16,16,16,16); (Blocked)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=20; (Blocked)</td>
+</tr>
+</tbody></table>
+<p>session A持有的锁：<code>PRIMARY:Next-Key Lock:(10,15]</code>+<code>PRIMARY:Next-Key Lock:(15,20]</code></p>
+</li>
+</ol>
+<h4 id="不唯一索引"><a href="#不唯一索引" class="headerlink" title="不唯一索引"></a>不唯一索引</h4><ol>
+<li><p>等值查询 – LOCK IN SHARE MODE</p>
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+<th align="left">session C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />SELECT id FROM t WHERE c=5 LOCK IN SHARE MODE;</td>
+<td align="left"></td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (7,7,7,7); <br />(Blocked)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=5;<br /> (Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE c=10;<br /> (Query OK)</td>
+</tr>
+</tbody></table>
+<p>session A用到了索引覆盖（只查询主键id），并且是加 s锁，所以无需回表对主键id加锁，加锁如下：<br>session A持有的锁：<code>c:Next-Key Lock:(0,5]</code>+<code>c:Gap Lock:(5,10)</code></p>
+</li>
+<li><p>等值查询 – FOR UPDATE</p>
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />SELECT id FROM t WHERE c=5 FOR UPDATE;</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=5; <br />(Blocked)</td>
+</tr>
+</tbody></table>
+<p>上一个例子中<code>LOCK IN SHARE MODE</code>只会锁住<strong>覆盖索引</strong>，而<code>FOR UPDATE</code>会同时给<strong>聚簇索引</strong>上<strong>满足条件的行</strong>加上<strong>X Lock</strong>，加锁如下：<br>session A持有的锁：<code>c:Next-Key Lock:(0,5]</code>+<code>c:Gap Lock:(5,10)</code>+<code>PRIMARY:X Lock:5</code></p>
+</li>
+<li><p>等值查询 – 绕过覆盖索引</p>
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />SELECT d FROM t WHERE c=5 LOCK IN SHARE MODE</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=5;<br /> (Blocked)</td>
+</tr>
+</tbody></table>
+<p>无法利用覆盖索引，就必须<strong>回表</strong>，与上面<code>FOR UPDATE</code>的情况一致，加锁如下：<br>session A持有的锁：<code>c:Next-Key Lock:(0,5]</code>+<code>c:Gap Lock:(5,10)</code>+<code>PRIMARY:S Lock:5</code></p>
+</li>
+<li><p>等值查询 – 相同的值</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- c=10有两行，两行之间也存在Gap</span></span><br><span class="line"><span class="keyword">INSERT</span> <span class="keyword">INTO</span> t <span class="keyword">VALUES</span> (<span class="number">30</span>,<span class="number">10</span>,<span class="number">30</span>,<span class="number">30</span>);</span><br></pre></td></tr></table></figure>
+
+<img src="/images/mysql-lock//image-20210908144035137.png" alt="image-20210908144035137" style="zoom:80%;" />
+
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+<th align="left">session C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />DELETE FROM t WHERE c=10;</td>
+<td align="left"></td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (12,12,12); <br />(Blocked)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE c=5;<br />(Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE c=15;<br />(Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=5; <br />(Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=15; <br />(Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=10; <br />(Blocked)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=30;<br />(Blocked)</td>
+</tr>
+</tbody></table>
+<img src="/images/mysql-lock//image-20210908144122524.png" alt="image-20210908144122524" style="zoom:80%;" />
+
+<p>session A持有的锁</p>
+<ul>
+<li><code>c:Next-Key Lock:((c=5,id=5),(c=10,id=10)]</code>+<code>c:Gap Lock:((c=10,id=10),(c=15,id=15))</code></li>
+<li><code>PRIMARY:X Lock:10</code>+<code>PRIMARY:X Lock:30</code></li>
+</ul>
+</li>
+<li><p>等值查询 – LIMIT</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- 与上面“相同的值”一样</span></span><br><span class="line"><span class="keyword">INSERT</span> <span class="keyword">INTO</span> t <span class="keyword">VALUES</span> (<span class="number">30</span>,<span class="number">10</span>,<span class="number">30</span>,<span class="number">30</span>);</span><br></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+<th align="left">session C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />DELETE FROM t WHERE c=10 LIMIT 2;</td>
+<td align="left"></td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (12,12,12,12);<br />(Query OK)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=10;<br />(Blocked)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=30;<br />(Blocked)</td>
+</tr>
+</tbody></table>
+<p>在遍历到<code>(c=10,id=30)</code>这一行记录后，已经有两行记录满足条件，<strong>循环结束</strong>，session A在二级索引c上的加锁效果如下所示</p>
+<img src="/images/mysql-lock//image-20210908151745952.png" alt="image-20210908151745952" style="zoom:90%;" />
+
+<p>session A持有的锁</p>
+<ul>
+<li><code>c:Next-Key Lock:((c=5,id=5),(c=10,id=10)]</code>+<code>c:Next-Key Lock:((c=10,id=10),(c=10,id=30)]</code></li>
+<li><code>PRIMARY:X Lock:10</code>+<code>PRIMARY:X Lock:30</code></li>
+</ul>
+<p>因此在删除数据时，尽量加上<code>LIMIT</code>，可以<strong>控制删除数据的条数</strong>，也可以<strong>减少加锁的范围</strong></p>
+</li>
+<li><p>范围查询</p>
+<table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+<th align="left">session C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN; <br />SELECT * FROM t WHERE c&gt;=10 AND c&lt;11 FOR UPDATE;</td>
+<td align="left"></td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (8,8,8,8); (Blocked)</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=10; (Blocked)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE c=15; (Blocked)</td>
+</tr>
+</tbody></table>
+<p>由于二级索引<code>c</code>是<strong>非唯一索引</strong>，因此没法降级为<strong>行锁</strong><br>session A持有的锁</p>
+<ul>
+<li><code>c:Next-Key Lock:(5,10]</code>+<code>c:Next-Key Lock:(10,15]</code></li>
+<li><code>PRIMARY:X Lock:10</code></li>
+</ul>
+</li>
+</ol>
+<h4 id="无索引查询"><a href="#无索引查询" class="headerlink" title="无索引查询"></a>无索引查询</h4><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">begin</span>;</span><br><span class="line"><span class="keyword">select</span> <span class="operator">*</span> <span class="keyword">from</span> t <span class="keyword">where</span> e <span class="operator">=</span> <span class="number">10</span> <span class="keyword">for</span> <span class="keyword">update</span>;</span><br></pre></td></tr></table></figure>
+<p>RC：对所有记录加 Record Lock 再释放不匹配的记录锁</p>
+<ul>
+<li>MySQL 加锁时是对处理过程中“扫描”到的记录加锁，不管这条记录最终是不是通过 WHERE 语句剔除了</li>
+<li>对于 READ COMMITTED，MySQL 在扫描结束后，会违反上条原则，释放 WHERE 条件不满足的记录锁<br>RR：通过聚簇索引，逐行扫描，逐行加锁，且索引前后都要加 Gap Lock，事务提交后统一释放锁</li>
+</ul>
+<h4 id="ORDER-BY-DESC"><a href="#ORDER-BY-DESC" class="headerlink" title="ORDER BY DESC"></a>ORDER BY DESC</h4><table>
+<thead>
+<tr>
+<th align="left">session A</th>
+<th align="left">session B</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">BEGIN;<br />SELECT * FROM t WHERE c&gt;=15 AND c &lt;=20 ORDER BY c DESC LOCK IN SHARE MODE;</td>
+<td align="left"></td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (6,6,6);<br />(Blocked)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">INSERT INTO t VALUES (21,21,21);<br />(Blocked)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=10;<br />(Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=25;<br />(Query OK)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=15;<br />(Blocked)</td>
+</tr>
+<tr>
+<td align="left"></td>
+<td align="left">UPDATE t SET d=d+1 WHERE id=20;<br />(Blocked)</td>
+</tr>
+</tbody></table>
+<ol>
+<li><code>ORDE BY DESC</code>，首先找到第一个满足<code>c=20</code>的行，session A持有锁：<code>c:Next-Key Lock:(15,20]</code></li>
+<li>由于二级索引<code>c</code>是<strong>非唯一索引</strong>，继续向<strong>右</strong>遍历，session A持有锁：<code>c:Gap Key Lock:(20,25)</code></li>
+<li>向<strong>左</strong>遍历，<code>c=15</code>，session A持有锁：<code>c:Next-Key Lock:(10,15]</code></li>
+<li>继续向<strong>左</strong>遍历，<code>c=10</code>，session A持有锁：<code>c:Next-Key Lock:(5,10]</code></li>
+<li>上述过程中，满足条件的主键为<code>id=15</code>和<code>id=20</code>，session A持有<strong>聚簇索引</strong>上对应行的<code>S Lock</code></li>
+<li>总结，session A持有的锁<ul>
+<li><code>c:Next-Key Lock:(5,10]</code>+<code>c:Next-Key Lock:(10,15]</code>+<code>c:Next-Key Lock:(15,20]</code>+<code>c:Gap Key Lock:(20,25)</code></li>
+<li><code>PRIMARY:S Lock:15</code>+<code>PRIMARY:S Lock:20</code></li>
+</ul>
+</li>
+</ol>
+<h4 id="等值-VS-遍历"><a href="#等值-VS-遍历" class="headerlink" title="等值 VS 遍历"></a>等值 VS 遍历</h4><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">BEGIN</span>;</span><br><span class="line"><span class="keyword">SELECT</span> <span class="operator">*</span> <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> id<span class="operator">&gt;</span><span class="number">12</span> <span class="keyword">AND</span> id<span class="operator">&lt;</span><span class="number">18</span> <span class="keyword">ORDER</span> <span class="keyword">BY</span> id <span class="keyword">DESC</span> <span class="keyword">FOR</span> <span class="keyword">UPDATE</span>;</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>利用上面的加锁规则，加锁范围如下<ul>
+<li><code>PRIMARY:Next-Key Lock:(5,10]</code></li>
+<li><code>PRIMARY:Next-Key Lock:(5,15]</code></li>
+<li><code>PRIMARY:Gap Lock:(15,20)</code></li>
+</ul>
+</li>
+<li>加锁动作是发生在语句执行过程中<ul>
+<li><code>ORDER BY DESC</code>，优化器必须先找到<strong>第一个id&lt;18的值</strong></li>
+<li>这个过程是通过<strong>索引树的搜索过程</strong>得到的，其实是在引擎内部查找<code>id=18</code></li>
+<li>只是最终没找到，而找到了<code>(15,20)</code>这个间隙</li>
+<li>然后<strong>向左遍历</strong>，在这个遍历过程，就不是等值查询了</li>
+<li>会扫描到 id=10 这一行，所以会加一个 next-key lock (5,10]</li>
+</ul>
+</li>
+<li>在执行过程中，通过<strong>树搜索</strong>的方式定位记录的过程，用的是<strong>等值查询</strong></li>
+</ol>
+<h4 id="IN"><a href="#IN" class="headerlink" title="IN"></a>IN</h4><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">BEGIN</span>;</span><br><span class="line"><span class="keyword">SELECT</span> id <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> c <span class="keyword">IN</span> (<span class="number">5</span>,<span class="number">20</span>,<span class="number">10</span>) LOCK <span class="keyword">IN</span> SHARE MODE;</span><br><span class="line"></span><br><span class="line"><span class="comment">-- Using index：使用了覆盖索引</span></span><br><span class="line"><span class="comment">-- key=c：使用了索引c</span></span><br><span class="line"><span class="comment">-- rows=3：三个值都是通过树搜索定位的</span></span><br><span class="line">mysql<span class="operator">&gt;</span> EXPLAIN <span class="keyword">SELECT</span> id <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> c <span class="keyword">IN</span> (<span class="number">5</span>,<span class="number">20</span>,<span class="number">10</span>) LOCK <span class="keyword">IN</span> SHARE MODE;</span><br><span class="line"><span class="operator">+</span><span class="comment">----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+--------------------------+</span></span><br><span class="line"><span class="operator">|</span> id <span class="operator">|</span> select_type <span class="operator">|</span> <span class="keyword">table</span> <span class="operator">|</span> partitions <span class="operator">|</span> type  <span class="operator">|</span> possible_keys <span class="operator">|</span> key  <span class="operator">|</span> key_len <span class="operator">|</span> <span class="keyword">ref</span>  <span class="operator">|</span> <span class="keyword">rows</span> <span class="operator">|</span> filtered <span class="operator">|</span> Extra                    <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+--------------------------+</span></span><br><span class="line"><span class="operator">|</span>  <span class="number">1</span> <span class="operator">|</span> SIMPLE      <span class="operator">|</span> t     <span class="operator">|</span> <span class="keyword">NULL</span>       <span class="operator">|</span> <span class="keyword">range</span> <span class="operator">|</span> c             <span class="operator">|</span> c    <span class="operator">|</span> <span class="number">5</span>       <span class="operator">|</span> <span class="keyword">NULL</span> <span class="operator">|</span>    <span class="number">3</span> <span class="operator">|</span>   <span class="number">100.00</span> <span class="operator">|</span> <span class="keyword">Using</span> <span class="keyword">where</span>; <span class="keyword">Using</span> index <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+--------------------------</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><p>查找c=5：<code>c:Next-Key Lock:(0,5]</code>+<code>c:Gap Lock:(5,10)</code></p>
+</li>
+<li><p>查找c=10：<code>c:Next-Key Lock:(5,10]</code>+<code>c:Gap Lock:(10,15)</code></p>
+</li>
+<li><p>查找c=20：<code>c:Next-Key Lock:(15,20]</code>+<code>c:Gap Lock:(20,25)</code></p>
+</li>
+<li><p>锁是在执行过程中是<strong>一个一个</strong>加的</p>
+</li>
+</ul>
+<ol>
+<li><p>ORDER BY DESC</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">BEGIN</span>;</span><br><span class="line"><span class="keyword">SELECT</span> id <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> c <span class="keyword">IN</span> (<span class="number">5</span>,<span class="number">20</span>,<span class="number">10</span>) <span class="keyword">ORDER</span> <span class="keyword">BY</span> c <span class="keyword">DESC</span> <span class="keyword">FOR</span> <span class="keyword">UPDATE</span>;</span><br><span class="line"></span><br><span class="line">mysql<span class="operator">&gt;</span> EXPLAIN <span class="keyword">SELECT</span> id <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> c <span class="keyword">IN</span> (<span class="number">5</span>,<span class="number">20</span>,<span class="number">10</span>) <span class="keyword">ORDER</span> <span class="keyword">BY</span> c <span class="keyword">DESC</span> <span class="keyword">FOR</span> <span class="keyword">UPDATE</span>;</span><br><span class="line"><span class="operator">+</span><span class="comment">----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+-----------------------------------------------+</span></span><br><span class="line"><span class="operator">|</span> id <span class="operator">|</span> select_type <span class="operator">|</span> <span class="keyword">table</span> <span class="operator">|</span> partitions <span class="operator">|</span> type  <span class="operator">|</span> possible_keys <span class="operator">|</span> key  <span class="operator">|</span> key_len <span class="operator">|</span> <span class="keyword">ref</span>  <span class="operator">|</span> <span class="keyword">rows</span> <span class="operator">|</span> filtered <span class="operator">|</span> Extra                                         <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+-----------------------------------------------+</span></span><br><span class="line"><span class="operator">|</span>  <span class="number">1</span> <span class="operator">|</span> SIMPLE      <span class="operator">|</span> t     <span class="operator">|</span> <span class="keyword">NULL</span>       <span class="operator">|</span> <span class="keyword">range</span> <span class="operator">|</span> c             <span class="operator">|</span> c    <span class="operator">|</span> <span class="number">5</span>       <span class="operator">|</span> <span class="keyword">NULL</span> <span class="operator">|</span>    <span class="number">3</span> <span class="operator">|</span>   <span class="number">100.00</span> <span class="operator">|</span> <span class="keyword">Using</span> <span class="keyword">where</span>; Backward index scan; <span class="keyword">Using</span> index <span class="operator">|</span></span><br><span class="line"><span class="operator">+</span><span class="comment">----+-------------+-------+------------+-------+---------------+------+---------+------+------+----------+-----------------------------------------------+</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><p><code>ORDER BY DESC</code>：先锁<code>c=20</code>，再锁<code>c=10</code>，最后锁<code>c=5</code></p>
+</li>
+<li><p><strong>加锁资源相同</strong>，但<strong>加锁顺序相反</strong>，如果语句是并发执行的，可能会出现<strong>死锁</strong></p>
+</li>
+</ul>
+</li>
+</ol>
+<h3 id="死锁分析"><a href="#死锁分析" class="headerlink" title="死锁分析"></a>死锁分析</h3><h4 id="案例1：插入意向锁死锁案例"><a href="#案例1：插入意向锁死锁案例" class="headerlink" title="案例1：插入意向锁死锁案例"></a>案例1：插入意向锁死锁案例</h4><table>
+<thead>
+<tr>
+<th>trx_1</th>
+<th><strong>trx_2</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>start transaction;</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td>start transaction;</td>
+</tr>
+<tr>
+<td>update t set e = 1 where c = 5;<br />索引c上加(0,5] next-key 、(5,10) gap</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td>update t set e = 1 where c = 5; <br />因为加锁是一个动态过程，首先加gap锁 (0,5)，因为gap锁兼容，所以可以获取到这个gap锁<br />当扫描到c=5这行时，需要加行锁，但是此行锁已经在被事务1获取，所以无法获取到行锁，<br />所以事务2需要等待事务1释放锁，所以产生锁等待</td>
+</tr>
+<tr>
+<td>insert into t set id = 4, c = 5;<br />插入语句会产生插入意向锁，会判断是否存在(0,5)gap、(0,5] next-key，<br />因为事务2持有(0,5)gap，如果需要插入成功，需要事务2释放(0,5)gap，<br />但是事务2又在等待事务1释放 c=5行锁，因此产生了环形等待，即死锁，所以触发事务2回滚</td>
+<td>ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction</td>
+</tr>
+</tbody></table>
+<h2 id="分析死锁日志"><a href="#分析死锁日志" class="headerlink" title="分析死锁日志"></a>分析死锁日志</h2><ul>
+<li>死锁场景：</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>session A</th>
+<th>session B</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>BEGIN;</td>
+<td></td>
+</tr>
+<tr>
+<td>SELECT id FROM t WHERE c=5 LOCK IN SHARE MODE;</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td>BEGIN;</td>
+</tr>
+<tr>
+<td></td>
+<td>SELECT id FROM t WHERE c=20 FOR UPDATE;</td>
+</tr>
+<tr>
+<td>SELECT id FROM t WHERE c=20 LOCK IN SHARE MODE;</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td>SELECT id FROM t WHERE c=5 FOR UPDATE;</td>
+</tr>
+<tr>
+<td>Deadlock found when trying to get lock; try restarting transaction</td>
+<td></td>
+</tr>
+</tbody></table>
+<p>MySQL只保留<strong>最后一个死锁的现场</strong>，并且这个现场还不完备</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line">mysql<span class="operator">&gt;</span> <span class="keyword">SHOW</span> ENGINE INNODB STATUS\G;</span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> (<span class="number">1</span>) TRANSACTION:</span><br><span class="line">TRANSACTION <span class="number">421596638701408</span>, ACTIVE <span class="number">23</span> sec starting index read</span><br><span class="line">mysql tables <span class="keyword">in</span> use <span class="number">1</span>, locked <span class="number">1</span></span><br><span class="line">LOCK WAIT <span class="number">4</span> lock struct(s), heap size <span class="number">1136</span>, <span class="number">3</span> <span class="type">row</span> lock(s)</span><br><span class="line">MySQL thread id <span class="number">2</span>, OS thread handle <span class="number">140121299891968</span>, query id <span class="number">964</span> <span class="number">172.17</span><span class="number">.0</span><span class="number">.1</span> root Sending data</span><br><span class="line"><span class="keyword">SELECT</span> id <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> c<span class="operator">=</span><span class="number">20</span> LOCK <span class="keyword">IN</span> SHARE MODE</span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> (<span class="number">1</span>) WAITING <span class="keyword">FOR</span> THIS LOCK <span class="keyword">TO</span> BE GRANTED:</span><br><span class="line">RECORD LOCKS space id <span class="number">39</span> page <span class="keyword">no</span> <span class="number">5</span> n bits <span class="number">80</span> index c <span class="keyword">of</span> <span class="keyword">table</span> `test`.`t` trx id <span class="number">421596638701408</span> lock mode S waiting</span><br><span class="line">Record lock, heap <span class="keyword">no</span> <span class="number">6</span> PHYSICAL RECORD: n_fields <span class="number">2</span>; compact format; info bits <span class="number">0</span></span><br><span class="line"> <span class="number">0</span>: len <span class="number">4</span>; hex <span class="number">80000014</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"> <span class="number">1</span>: len <span class="number">4</span>; hex <span class="number">80000014</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"></span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> (<span class="number">2</span>) TRANSACTION:</span><br><span class="line">TRANSACTION <span class="number">8656</span>, ACTIVE <span class="number">14</span> sec starting index read</span><br><span class="line">mysql tables <span class="keyword">in</span> use <span class="number">1</span>, locked <span class="number">1</span></span><br><span class="line"><span class="number">5</span> lock struct(s), heap size <span class="number">1136</span>, <span class="number">4</span> <span class="type">row</span> lock(s)</span><br><span class="line">MySQL thread id <span class="number">5</span>, OS thread handle <span class="number">140121299080960</span>, query id <span class="number">968</span> <span class="number">172.17</span><span class="number">.0</span><span class="number">.1</span> root Sending data</span><br><span class="line"><span class="keyword">SELECT</span> id <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> c<span class="operator">=</span><span class="number">5</span> <span class="keyword">FOR</span> <span class="keyword">UPDATE</span></span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> (<span class="number">2</span>) HOLDS THE LOCK(S):</span><br><span class="line">RECORD LOCKS space id <span class="number">39</span> page <span class="keyword">no</span> <span class="number">5</span> n bits <span class="number">80</span> index c <span class="keyword">of</span> <span class="keyword">table</span> `test`.`t` trx id <span class="number">8656</span> lock_mode X</span><br><span class="line">Record lock, heap <span class="keyword">no</span> <span class="number">6</span> PHYSICAL RECORD: n_fields <span class="number">2</span>; compact format; info bits <span class="number">0</span></span><br><span class="line"> <span class="number">0</span>: len <span class="number">4</span>; hex <span class="number">80000014</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"> <span class="number">1</span>: len <span class="number">4</span>; hex <span class="number">80000014</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"></span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> (<span class="number">2</span>) WAITING <span class="keyword">FOR</span> THIS LOCK <span class="keyword">TO</span> BE GRANTED:</span><br><span class="line">RECORD LOCKS space id <span class="number">39</span> page <span class="keyword">no</span> <span class="number">5</span> n bits <span class="number">80</span> index c <span class="keyword">of</span> <span class="keyword">table</span> `test`.`t` trx id <span class="number">8656</span> lock_mode X waiting</span><br><span class="line">Record lock, heap <span class="keyword">no</span> <span class="number">3</span> PHYSICAL RECORD: n_fields <span class="number">2</span>; compact format; info bits <span class="number">0</span></span><br><span class="line"> <span class="number">0</span>: len <span class="number">4</span>; hex <span class="number">80000005</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"> <span class="number">1</span>: len <span class="number">4</span>; hex <span class="number">80000005</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"></span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> WE ROLL BACK TRANSACTION (<span class="number">1</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>(1) TRANSACTION</code>：第一个事务的信息</li>
+<li><code>(2) TRANSACTION</code>：第二个事务的信息</li>
+<li><code>WE ROLL BACK TRANSACTION (1)</code>：最终的处理结果是回滚第一个事务</li>
+</ul>
+<h4 id="第一个事务"><a href="#第一个事务" class="headerlink" title="第一个事务"></a>第一个事务</h4><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> id <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> c<span class="operator">=</span><span class="number">20</span> LOCK <span class="keyword">IN</span> SHARE MODE</span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> (<span class="number">1</span>) WAITING <span class="keyword">FOR</span> THIS LOCK <span class="keyword">TO</span> BE GRANTED:</span><br><span class="line">RECORD LOCKS space id <span class="number">39</span> page <span class="keyword">no</span> <span class="number">5</span> n bits <span class="number">80</span> index c <span class="keyword">of</span> <span class="keyword">table</span> `test`.`t` trx id <span class="number">421596638701408</span> lock mode S waiting</span><br><span class="line">Record lock, heap <span class="keyword">no</span> <span class="number">6</span> PHYSICAL RECORD: n_fields <span class="number">2</span>; compact format; info bits <span class="number">0</span></span><br><span class="line"> <span class="number">0</span>: len <span class="number">4</span>; hex <span class="number">80000014</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"> <span class="number">1</span>: len <span class="number">4</span>; hex <span class="number">80000014</span>; <span class="keyword">asc</span>     ;;</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li><code>(1) WAITING FOR THIS LOCK TO BE GRANTED</code>：表示第一个事务在等待的锁的信息</li>
+<li><code>index c of table test.t</code>：表示等待表<code>t</code>的索引<code>c</code>上的锁</li>
+<li><code>lock mode S waiting</code>：表示正在执行的语句要加一个<code>S Lock</code>，当前状态为<strong>等待中</strong></li>
+<li><code>Record lock</code>：表示这是一个<strong>记录锁</strong>（行数）</li>
+<li><code>n_fields 2</code>：表示这个记录有2列（二级索引），即字段<code>c</code>和主键字段<code>id</code></li>
+<li><code>len 4; hex 80000014; asc ;;</code>：第一个字段<code>c</code><ul>
+<li><code>asc</code>：表示接下来要打印值里面的<strong>可打印字符</strong>，20不是可打印字符，因此显示<strong>空格</strong></li>
+</ul>
+</li>
+<li><code>1: len 4; hex 80000014; asc ;;</code>：第二个字段<code>id</code></li>
+<li>第一个事务在等待<code>(c=20,id=20)</code>这一行的行锁</li>
+<li>但并没有打印出第一个事务本身所占有的锁，可以通过第二个事务反向推导出来</li>
+</ol>
+<h4 id="第二个事务"><a href="#第二个事务" class="headerlink" title="第二个事务"></a>第二个事务</h4><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> id <span class="keyword">FROM</span> t <span class="keyword">WHERE</span> c<span class="operator">=</span><span class="number">5</span> <span class="keyword">FOR</span> <span class="keyword">UPDATE</span></span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> (<span class="number">2</span>) HOLDS THE LOCK(S):</span><br><span class="line">RECORD LOCKS space id <span class="number">39</span> page <span class="keyword">no</span> <span class="number">5</span> n bits <span class="number">80</span> index c <span class="keyword">of</span> <span class="keyword">table</span> `test`.`t` trx id <span class="number">8656</span> lock_mode X</span><br><span class="line">Record lock, heap <span class="keyword">no</span> <span class="number">6</span> PHYSICAL RECORD: n_fields <span class="number">2</span>; compact format; info bits <span class="number">0</span></span><br><span class="line"> <span class="number">0</span>: len <span class="number">4</span>; hex <span class="number">80000014</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"> <span class="number">1</span>: len <span class="number">4</span>; hex <span class="number">80000014</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"></span><br><span class="line"><span class="operator">*</span><span class="operator">*</span><span class="operator">*</span> (<span class="number">2</span>) WAITING <span class="keyword">FOR</span> THIS LOCK <span class="keyword">TO</span> BE GRANTED:</span><br><span class="line">RECORD LOCKS space id <span class="number">39</span> page <span class="keyword">no</span> <span class="number">5</span> n bits <span class="number">80</span> index c <span class="keyword">of</span> <span class="keyword">table</span> `test`.`t` trx id <span class="number">8656</span> lock_mode X waiting</span><br><span class="line">Record lock, heap <span class="keyword">no</span> <span class="number">3</span> PHYSICAL RECORD: n_fields <span class="number">2</span>; compact format; info bits <span class="number">0</span></span><br><span class="line"> <span class="number">0</span>: len <span class="number">4</span>; hex <span class="number">80000005</span>; <span class="keyword">asc</span>     ;;</span><br><span class="line"> <span class="number">1</span>: len <span class="number">4</span>; hex <span class="number">80000005</span>; <span class="keyword">asc</span>     ;;</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li><code>(2) HOLDS THE LOCK(S)</code>：表示第二个事务持有的锁的信息</li>
+<li><code>index c of table test.t</code>：表示锁是加在表<code>t</code>的索引<code>c</code>上</li>
+<li><code>0: len 4; hex 80000014; asc ;;</code>+<code>1: len 4; hex 80000014; asc ;;</code><ul>
+<li>第二个事务持有<code>(c=20,id=20)</code>这一行的行锁（<code>X Lock</code>）</li>
+</ul>
+</li>
+<li><code>(2) WAITING FOR THIS LOCK TO BE GRANTED</code><ul>
+<li>第二个事务等待<code>(c=5,id=5)</code>只一行的行锁</li>
+</ul>
+</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Storage/" rel="tag"># Storage</a>
+              <a href="/tags/MySQL/" rel="tag"># MySQL</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/01/14/mysql-index/" rel="prev" title="MySQL -- 索引">
+      <i class="fa fa-chevron-left"></i> MySQL -- 索引
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Mysql-%E9%94%81%E6%80%BB%E7%BB%93"><span class="nav-number">1.</span> <span class="nav-text">Mysql 锁总结</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8A%A0%E9%94%81%E6%9C%BA%E5%88%B6"><span class="nav-number">1.1.</span> <span class="nav-text">加锁机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%BC%E5%AE%B9%E6%80%A7"><span class="nav-number">1.2.</span> <span class="nav-text">兼容性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%94%81%E7%B2%92%E5%BA%A6"><span class="nav-number">1.3.</span> <span class="nav-text">锁粒度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%94%81%E7%B1%BB%E5%9E%8B"><span class="nav-number">1.4.</span> <span class="nav-text">锁类型</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%A8%E5%B1%80%E9%94%81"><span class="nav-number">2.</span> <span class="nav-text">全局锁</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#MDL"><span class="nav-number">3.</span> <span class="nav-text">MDL</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#MDL%E4%BD%9C%E7%94%A8"><span class="nav-number">3.1.</span> <span class="nav-text">MDL作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MDL%E9%94%81%E7%B1%BB%E5%9E%8B"><span class="nav-number">3.2.</span> <span class="nav-text">MDL锁类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MDL%E9%94%81%E5%AF%B9%E8%B1%A1%E3%80%81%E8%8C%83%E5%9B%B4"><span class="nav-number">3.3.</span> <span class="nav-text">MDL锁对象、范围</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MDL%E6%8C%81%E6%9C%89%E6%97%B6%E9%97%B4"><span class="nav-number">3.4.</span> <span class="nav-text">MDL持有时间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MDL%E9%94%81%E6%A8%A1%E5%BC%8F"><span class="nav-number">3.5.</span> <span class="nav-text">MDL锁模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Online-DDL%E8%BF%87%E7%A8%8B"><span class="nav-number">3.6.</span> <span class="nav-text">Online DDL过程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%A1%A8%E7%BA%A7%E9%94%81"><span class="nav-number">4.</span> <span class="nav-text">表级锁</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%84%8F%E5%90%91%E9%94%81"><span class="nav-number">5.</span> <span class="nav-text">意向锁</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%87%AA%E5%A2%9E%E9%94%81"><span class="nav-number">6.</span> <span class="nav-text">自增锁</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8F%92%E5%85%A5%E6%84%8F%E5%90%91%E9%94%81%EF%BC%88Insert-Intention-Locks%EF%BC%89"><span class="nav-number">7.</span> <span class="nav-text">插入意向锁（Insert Intention Locks）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%A1%8C%E9%94%81%E3%80%81Gap%E9%94%81%E3%80%81Next-key-Lock"><span class="nav-number">8.</span> <span class="nav-text">行锁、Gap锁、Next-key Lock</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A1%8C%E9%94%81"><span class="nav-number">8.1.</span> <span class="nav-text">行锁</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%A4%E9%98%B6%E6%AE%B5%E9%94%81"><span class="nav-number">8.1.1.</span> <span class="nav-text">两阶段锁</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%AD%BB%E9%94%81"><span class="nav-number">8.1.2.</span> <span class="nav-text">死锁</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%94%81%E7%AD%89%E5%BE%85"><span class="nav-number">8.1.3.</span> <span class="nav-text">锁等待</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%AD%BB%E9%94%81%E6%A3%80%E6%B5%8B%EF%BC%88%E6%8E%A8%E8%8D%90%EF%BC%89"><span class="nav-number">8.1.4.</span> <span class="nav-text">死锁检测（推荐）</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#GAP-Lock"><span class="nav-number">8.2.</span> <span class="nav-text">GAP Lock</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Gap-Lock-%E4%BD%9C%E7%94%A8%E5%9C%BA%E6%99%AF"><span class="nav-number">8.2.1.</span> <span class="nav-text">Gap Lock 作用场景</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Gap-Lock%E5%86%B2%E7%AA%81%E5%85%B3%E7%B3%BB"><span class="nav-number">8.2.2.</span> <span class="nav-text">Gap Lock冲突关系</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Next-Key-Lock"><span class="nav-number">8.3.</span> <span class="nav-text">Next-Key Lock</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#MySql-%E5%8A%A0%E9%94%81%E8%A7%84%E5%88%99"><span class="nav-number">9.</span> <span class="nav-text">MySql 加锁规则</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8A%A0%E9%94%81%E9%80%BB%E8%BE%91"><span class="nav-number">9.1.</span> <span class="nav-text">加锁逻辑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%94%81%E5%85%BC%E5%AE%B9%E5%88%97%E8%A1%A8"><span class="nav-number">9.2.</span> <span class="nav-text">锁兼容列表</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8A%A0%E9%94%81%E3%80%81%E6%AD%BB%E9%94%81%E5%88%86%E6%9E%90"><span class="nav-number">10.</span> <span class="nav-text">加锁、死锁分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8A%A0%E9%94%81%E5%88%86%E6%9E%90"><span class="nav-number">10.1.</span> <span class="nav-text">加锁分析</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%94%AF%E4%B8%80%E7%B4%A2%E5%BC%95"><span class="nav-number">10.1.1.</span> <span class="nav-text">唯一索引</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%8D%E5%94%AF%E4%B8%80%E7%B4%A2%E5%BC%95"><span class="nav-number">10.1.2.</span> <span class="nav-text">不唯一索引</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%97%A0%E7%B4%A2%E5%BC%95%E6%9F%A5%E8%AF%A2"><span class="nav-number">10.1.3.</span> <span class="nav-text">无索引查询</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ORDER-BY-DESC"><span class="nav-number">10.1.4.</span> <span class="nav-text">ORDER BY DESC</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AD%89%E5%80%BC-VS-%E9%81%8D%E5%8E%86"><span class="nav-number">10.1.5.</span> <span class="nav-text">等值 VS 遍历</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#IN"><span class="nav-number">10.1.6.</span> <span class="nav-text">IN</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%AD%BB%E9%94%81%E5%88%86%E6%9E%90"><span class="nav-number">10.2.</span> <span class="nav-text">死锁分析</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B1%EF%BC%9A%E6%8F%92%E5%85%A5%E6%84%8F%E5%90%91%E9%94%81%E6%AD%BB%E9%94%81%E6%A1%88%E4%BE%8B"><span class="nav-number">10.2.1.</span> <span class="nav-text">案例1：插入意向锁死锁案例</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%86%E6%9E%90%E6%AD%BB%E9%94%81%E6%97%A5%E5%BF%97"><span class="nav-number">11.</span> <span class="nav-text">分析死锁日志</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E4%B8%AA%E4%BA%8B%E5%8A%A1"><span class="nav-number">11.0.1.</span> <span class="nav-text">第一个事务</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E4%B8%AA%E4%BA%8B%E5%8A%A1"><span class="nav-number">11.0.2.</span> <span class="nav-text">第二个事务</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="tlv"
+      src="/images/avatar.jpeg">
+  <p class="site-author-name" itemprop="name">tlv</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">tags</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 2015 – 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">tlv</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+<script src="/js/bookmark.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+  <script src="//cdn.jsdelivr.net/npm/quicklink@1/dist/quicklink.umd.js"></script>
+  <script>
+      window.addEventListener('load', () => {
+      quicklink({
+        timeout : 3000,
+        priority: true,
+        ignores : [uri => uri.includes('#'),uri => uri === 'http://example.com/2020/01/19/mysql-lock/',]
+      });
+      });
+  </script>
+
+</body>
+</html>

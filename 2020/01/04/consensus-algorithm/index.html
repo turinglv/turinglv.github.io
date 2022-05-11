@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.json"};
+  </script>
+
+  <meta name="description" content="分布式共识算法分布式共识（Consensus）多个参与者针对某一件事达成完全一致：一件事，一个结论。已达成一致的结论，不可推翻。 为了达成一致，每个进程都提出自己的提议（propose），最终通过分布式一致性算法，所有正确运行的进程决定（decide）相同的值。 如果在一个不出现故障的系统中，很容易解决分布式一致性问题。但是实际分布式系统一般是基于消息传递的异步分布式系统，进程可能会慢、被杀死或者">
+<meta property="og:type" content="article">
+<meta property="og:title" content="分布式一致性算法介绍">
+<meta property="og:url" content="http://example.com/2020/01/04/consensus-algorithm/index.html">
+<meta property="og:site_name" content="温故而知新">
+<meta property="og:description" content="分布式共识算法分布式共识（Consensus）多个参与者针对某一件事达成完全一致：一件事，一个结论。已达成一致的结论，不可推翻。 为了达成一致，每个进程都提出自己的提议（propose），最终通过分布式一致性算法，所有正确运行的进程决定（decide）相同的值。 如果在一个不出现故障的系统中，很容易解决分布式一致性问题。但是实际分布式系统一般是基于消息传递的异步分布式系统，进程可能会慢、被杀死或者">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/OIP-C.vQ1Wb2s91lSwkgNfTBfeFgHaGa">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/leader_election.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/RSM-20211109172154933.jpg">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm//image-20211110142025398.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm//image-20211110142043783.png">
+<meta property="og:image" content="https://github.com/vision9527/paxos/raw/main/images/single_proposer.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/many_proposer.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/live_lock-20211112132559089.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/image-20210828204920161-20210828204921.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/15473897584862.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/15473897747901.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/15473897855814.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/15473897991049.png">
+<meta property="og:image" content="http://example.com/images/consensus-algorithm/15473898081005.png">
+<meta property="article:published_time" content="2020-01-04T16:00:00.000Z">
+<meta property="article:modified_time" content="2022-05-11T13:27:38.352Z">
+<meta property="article:author" content="tlv">
+<meta property="article:tag" content="Zookeeper">
+<meta property="article:tag" content="paxos">
+<meta property="article:tag" content="ZAB">
+<meta property="article:tag" content="Raft">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/images/consensus-algorithm/OIP-C.vQ1Wb2s91lSwkgNfTBfeFgHaGa">
+
+<link rel="canonical" href="http://example.com/2020/01/04/consensus-algorithm/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>分布式一致性算法介绍 | 温故而知新</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">温故而知新</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories<span class="badge">7</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives<span class="badge">8</span></a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2020/01/04/consensus-algorithm/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpeg">
+      <meta itemprop="name" content="tlv">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="温故而知新">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          分布式一致性算法介绍
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2020-01-05 00:00:00" itemprop="dateCreated datePublished" datetime="2020-01-05T00:00:00+08:00">2020-01-05</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-05-11 21:27:38" itemprop="dateModified" datetime="2022-05-11T21:27:38+08:00">2022-05-11</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Distributed/" itemprop="url" rel="index"><span itemprop="name">Distributed</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Distributed/Zookeeper/" itemprop="url" rel="index"><span itemprop="name">Zookeeper</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Distributed/Zookeeper/paxos/" itemprop="url" rel="index"><span itemprop="name">paxos</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Distributed/Zookeeper/paxos/ZAB/" itemprop="url" rel="index"><span itemprop="name">ZAB</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Distributed/Zookeeper/paxos/ZAB/Raft/" itemprop="url" rel="index"><span itemprop="name">Raft</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>7.2k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>7 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="分布式共识算法"><a href="#分布式共识算法" class="headerlink" title="分布式共识算法"></a>分布式共识算法</h2><h3 id="分布式共识（Consensus）"><a href="#分布式共识（Consensus）" class="headerlink" title="分布式共识（Consensus）"></a>分布式共识（Consensus）</h3><p>多个参与者针对某一件事达成完全一致：一件事，一个结论。已达成一致的结论，不可推翻。</p>
+<p>为了达成一致，每个进程都提出自己的提议（propose），最终通过分布式一致性算法，所有正确运行的进程决定（decide）相同的值。</p>
+<p>如果在一个不出现故障的系统中，很容易解决分布式一致性问题。但是实际分布式系统一般是基于消息传递的异步分布式系统，进程可能会慢、被杀死或者重启，消息可能会延迟、丢失、重复、乱序等。</p>
+<p>在一个可能发生上述异常的分布式系统中如何就某个值达成一致，形成一致的决议，保证不论发生以上任何异常，都不会破坏决议的一致性，这些正是一致性算法要解决的问题。</p>
+<h3 id="FLP-Impossibility-理论"><a href="#FLP-Impossibility-理论" class="headerlink" title="FLP Impossibility 理论"></a>FLP Impossibility 理论</h3><p>FLP定理是分布式理论中最重要的理论之一，它指出<strong>在最小化异步网络通信场景下，即使只有一个节点失败，也没有一种确定性的共识算法能够使得在其他节点之间保持数据一致。</strong>不可能定理是基于异步系统模型而做的证明，这是一个非常受限的模型，它假定共识算法不能使用任何时钟或超时机制来检测崩溃节点，并且消息仅会被传送一次。</p>
+<p>一个<strong>正确</strong>的分布式算法需要满足两条性质：</p>
+<ul>
+<li>Safety：具备Safety性质的算法保证坏的事情绝对不会发生，例如对于满足Safety性质的分布式选主(Leader election)算法，绝对不会出现一个以上进程被选为Leader的情况。</li>
+<li>Liveness：具备Liveness性质的算法保证好的事情终将发生，即算法在有限的时间内可以结束</li>
+</ul>
+<p>综上，一个<strong>正确</strong>的分布式算法可以在<strong>指定的分布式系统模型</strong>中保证<strong>Safety</strong>和<strong>Liveness</strong>属性</p>
+<p>而FLP不可能原理则是在说，异步网络中liveness和safety是一对冤家. total correct意味着要同时满足safety和liveness，但只要有一个faulty process这就是不可能的</p>
+<p>分布式系统的共识有以下三个标准，并且缺一不可：</p>
+<ul>
+<li>Termination（终止性）非失败进程最终需要决定一个值</li>
+<li>Agreement（一致性）所有的进程必须决定的值必须是同一个值</li>
+<li>Validity（有效性）这个被决定的值必须是被某些进程提出的</li>
+</ul>
+<p>我们所知的一致性算法如 Paxos 或 Raft 都不是真正意义上的一致性算法，因为它们无法同时满足上面的三个条件</p>
+<h3 id="CAP-理论"><a href="#CAP-理论" class="headerlink" title="CAP 理论"></a>CAP 理论</h3><p>CAP理论是分布式系统（特别是分布式存储领域中被讨论的最多的理论）</p>
+<ul>
+<li>C代表一致性 (Consistency)<ul>
+<li>一个写操作返回成功，那么之后的读请求都必须读到这个新数据；</li>
+<li>如果返回失败，那么所有读操作都不能读到这个数据。所有节点访问同一份最新的数据</li>
+</ul>
+</li>
+<li>A代表可用性 (Availability)<ul>
+<li>对数据更新具备高可用性，请求能够及时处理，不会一直等待，即使出现节点失效</li>
+</ul>
+</li>
+<li>P代表分区容错性 (Partition tolerance)<ul>
+<li>能容忍网络分区，在网络断开的情况下，被分隔的节点仍能正常对外提供服务</li>
+</ul>
+</li>
+</ul>
+<p>CAP理论告诉我们C、A、P三者不能同时满足，最多只能满足其中两个</p>
+<p><img src="/images/consensus-algorithm/OIP-C.vQ1Wb2s91lSwkgNfTBfeFgHaGa" alt="See the source image"></p>
+<p>理解CAP理论最简单的方式是想象两个副本处于分区两侧，即两个副本之间的网络断开，不能通信</p>
+<ul>
+<li>如果允许其中一个副本更新，则会导致数据不一致，即丧失了C性质。</li>
+<li>如果为了保证一致性，将分区某一侧的副本设置为不可用，那么又丧失了A性质。</li>
+<li>除非两个副本可以互相通信，才能既保证C又保证A，这又会导致丧失P性质。</li>
+</ul>
+<p>一般来说使用网络通信的分布式系统，无法舍弃P性质，那么就只能在一致性和可用性上做一个艰难的选择，Paxos、Raft等分布式一致性算法就是在一致性和可用性之间做到了很好的平衡的见证</p>
+<h3 id="BASE-理论"><a href="#BASE-理论" class="headerlink" title="BASE 理论"></a>BASE 理论</h3><p>BASE 理论是 eBay 架构师对大规模互联网分布式系统实践的总结，并在 ACM 上发表了 <strong><a target="_blank" rel="noopener" href="https://queue.acm.org/detail.cfm?id=1394128">Base: An Acid Alternative</a></strong> 一文，其核心思想是<strong>即使无法做到强一致性，但每个应用都可以根据自身业务特点，采用适当的方式来使系统达到最终一致性</strong>。</p>
+<p>BASE 是对 CAP 中一致性和可用性权衡的结果，对分布式系统提出了三个概念：</p>
+<ul>
+<li>基本可用（Basically Available）</li>
+<li>软（弱）状态（Soft State）</li>
+<li>最终一致性（Eventually Consistent）</li>
+</ul>
+<p>BASE 理论表明要实现系统的横向扩展，就要对业务进行功能分区，将数据的不同功能组迁移到相互独立的数据库服务器上。由于降低了事务的耦合度，就不能单纯依赖数据库的约束来保证功能组之间的一致性，BASE 提出使用消息队列来异步执行解耦后的命令。</p>
+<p>BASE 理论强调的最终一致性允许系统中的数据存在中间状态，并认为该状态不影响系统的整体可用性，即<strong>允许多个节点的数据副本存在数据延时</strong>。但是在一定的期限内，应当保证所有副本数据一致，达到数据的最终一致。</p>
+<p>总体来说 BASE 理论面向的是大型高并发、可扩展的分布式系统。BASE 提出通过牺牲强一致性来获得可用性，并允许数据短时间内的不一致。在实际场景中，不同业务对数据的一致性要求也不一样，因此衍生出因果一致性、单调读一致性等一致性模型，最终选择要根据使用场景决定。</p>
+<h3 id="多副本状态机（Replicated-state-machines）"><a href="#多副本状态机（Replicated-state-machines）" class="headerlink" title="多副本状态机（Replicated state machines）"></a>多副本状态机（Replicated state machines）</h3><p>多副本状态机是指多台机器具有完全相同的状态，并且运行有完全相同的确定性状态机。</p>
+<p>通过使用这样的状态机，可以解决很多分布式系统中的容错问题，因为多副本状态机通常可以容忍⌊N/2⌋进程故障，且所有正常运行的副本都完全一致，</p>
+<p>所以，可以使用多副本状态机来实现需要避免单点故障的组件，如集中式的选主或是互斥算法中的协调者（coordinator），如图所示：</p>
+<p><img src="/images/consensus-algorithm/leader_election.png" alt="高可用“单点”的集中式架构"></p>
+<p>集中式的选主或互斥算法逻辑简单，但最大的问题是协调者的单点故障问题，通过采用多副本状态机来实现协调者实现了高可用的“单点”，回避了单点故障。Google的Chubby服务和类似的开源服务Zookeeper就是这样的例子</p>
+<p>虽然有很多不同的多副本状态机实现，但其基本实现模式是类似的：状态机的每个副本上都保存有完全相同的操作日志，保证所有副本状态机按照相同的顺序执行操作，这样由于状态机是确定性的，则一定会得到相同的状态，如下图：</p>
+<p><img src="/images/consensus-algorithm/RSM-20211109172154933.jpg" alt="img"></p>
+<p>共识算法的作用就是在这样的场景中保证所有副本状态机上的操作日志具有完全相同的顺序，具体来讲：<strong>如果状态机的任何一个副本在本地状态机上执行了一个操作，则绝对不会有别的副本在操作序列相同位置执行一个不同的操作</strong>。</p>
+<h3 id="Paxos"><a href="#Paxos" class="headerlink" title="Paxos"></a>Paxos</h3><h4 id="Paxos-Overview"><a href="#Paxos-Overview" class="headerlink" title="Paxos Overview"></a>Paxos Overview</h4><ul>
+<li>Paxos( <a target="_blank" rel="noopener" href="http://lamport.azurewebsites.net/pubs/lamport-paxos.pdf">The Part-Time Parliament</a> )共识算法由<a target="_blank" rel="noopener" href="http://www.lamport.org/">Leslie Lamport</a>在1989年首次发布，后来由于大多数人不太能接受他的幽默风趣的介绍方法（其实用比喻的方式介绍长篇的理论，确实让人比较难理解），于是在2001年重新写一篇名叫 <a target="_blank" rel="noopener" href="http://lamport.azurewebsites.net/pubs/paxos-simple.pdf">Paxos Made Simple</a> 论文，相当于原始Paxos算法的简化版，主要讲述两阶段共识协议部分。这篇文章与原始文章在讲述Paxos算法上最大的不同就是用的都是计算机术语，看起来也轻松很多</li>
+<li>Paxos算法是分布式系统中的一个共识算法家族，也是第一个有完整数学证明的共识算法</li>
+<li>“世界上只有两种分布式共识算法，一种是Paxos算法，另一种是类Paxos算法”</li>
+<li>现在比较流行的zab和raft算法也是基于Paxos算法设计的</li>
+</ul>
+<h4 id="Basic-Paxos"><a href="#Basic-Paxos" class="headerlink" title="Basic Paxos"></a>Basic Paxos</h4><ol>
+<li><p>角色</p>
+<ul>
+<li><p><strong>提议者（Proposer）</strong>：发出提案（Proposal）。Proposal 信息包括提案编号 (Proposal ID) 和提议的值 (Value)</p>
+</li>
+<li><p><strong>决策者（Acceptor）</strong>：对每个 Proposal 进行投票，若 Proposal 获得多数 Acceptor 的接受，则称该 Proposal 被批准</p>
+</li>
+<li><p><strong>学习者（Learner）</strong>：不参与决策，从 Proposers/Acceptors 学习、记录最新达成共识的提案（Value）</p>
+</li>
+</ul>
+</li>
+<li><p>算法介绍</p>
+<p><img src="/images/consensus-algorithm//image-20211110142025398.png" alt="image-20211110142025398"></p>
+<p><img src="/images/consensus-algorithm//image-20211110142043783.png" alt="image-20211110142043783"></p>
+<ul>
+<li>Prepare:<ul>
+<li>Proposer 选择一个提案编号 N，然后向 Acceptor 广播编号为 N 的 Prepare 请求；</li>
+<li>如果 Acceptor 收到一个编号为 N 的 Prepare 请求，且 N 大于它已经响应的所有 Prepare 请求的编号，那么它就会保证不再响应任何编号小于 N 的提案，同时将它已经通过的最大编号的提案（如果存在的话）回复给 Proposer。</li>
+</ul>
+</li>
+<li>Accept:<ul>
+<li>如果 Proposer 收到来自半数以上 Acceptor 的响应，那么它就会发送包含 (N, value) 的 Accept 请求，这里的 value 是收到的响应中编号最大的提案值，如果所有的响应都不包含提案，那么它是客户端发送的值；</li>
+<li>如果 Acceptor 收到一个针对编号 N 的提案的 Accept 请求，只要它还未对编号大于 N 的 Prepare 请求作出响应，它就可以通过这个提案</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>案例说明</p>
+<ol>
+<li><p>单个Proposer发起提议</p>
+<img src="https://github.com/vision9527/paxos/raw/main/images/single_proposer.png" alt="single_proposer" style="zoom:40%;" /></li>
+<li><p>多个Proposer发起提议</p>
+<img src="/images/consensus-algorithm/many_proposer.png" alt="many_proposer" style="zoom:40%;" /></li>
+<li><p>活锁等待情况（两个或者多个Proposer在Prepare阶段发生互相抢占的情形）</p>
+<img src="/images/consensus-algorithm/live_lock-20211112132559089.png" alt="live_lock" style="zoom:40%;"/></li>
+</ol>
+</li>
+</ol>
+<h3 id="Multi-Paxos"><a href="#Multi-Paxos" class="headerlink" title="Multi Paxos"></a>Multi Paxos</h3><p>为了不发生活锁等待，一个简单的方式是让服务器等待一会，如果发生接受失败的情况，必须返回重新开始。在重新开始之前等待一会，让提议能有机会完成。可以让集群下服务器随机的延迟，从而避免所有服务器都处于相同的等待时间下。在Multi-Paxos下，会有些不同，它是通过（leader election）的机制。保证在同一时间下只有一个 提议者（Proposers） 在工作</p>
+<ul>
+<li><p>Multi-Paxos是通过选主解决了进展性问题（同时也是满足一致性的）</p>
+</li>
+<li><p>在Multi Paxos算法中，选主只是为了解决进展性问题，不会影响一致性，即使出现脑裂Paxos算法也是安全的，只会影响进展性</p>
+</li>
+<li><p>两阶段协议效率太低，可以有优化的空间。在单个Leader的情况下，如果前一次已经accept成功，接下来不再需要prepare阶段，直接进行accept</p>
+</li>
+<li><p>当需要决定多个值时就需要连续执行多次Paxos算法，一般执行一次Paxos算法的过程称作A Paxos Run 或者 A Paxos Instance</p>
+</li>
+<li><p>多个instance可以并发的进行</p>
+</li>
+<li><p>Multi Paxos通常是指一类共识算法，不是精确的指定某个共识算法</p>
+</li>
+</ul>
+<h3 id="ZAB（ZooKeeper-Atomic-Broadcast）"><a href="#ZAB（ZooKeeper-Atomic-Broadcast）" class="headerlink" title="ZAB（ZooKeeper Atomic Broadcast）"></a>ZAB（<strong>ZooKeeper Atomic Broadcast</strong>）</h3><p>Zookeeper Atomic Broadcast，Zookeeper原子消息广播协议，是为Zookeeper所专门设计的一种支持崩溃恢复的原子广播协议。<strong>ZAB协议并不像Paxos算法那样是一种通用的分布式一致性算法，而是专为Zookeeper所设计的</strong></p>
+<ol>
+<li><p>集群角色</p>
+<ul>
+<li><strong>Leader</strong>：一个ZooKeeper集群同一时间只会有一个实际工作的Leader，它会发起并维护与各Follwer及Observer间的心跳。所有的写操作必须要通过Leader完成再由Leader将写操作广播给其它服务器。</li>
+<li><strong>Follower</strong>： 一个ZooKeeper集群可能同时存在多个Follower，它会响应Leader的心跳。Follower可直接处理并返回客户端的读请求，同时会将写请求转发给Leader处理，并且负责在Leader处理写请求时对请求进行投票。</li>
+<li><strong>Observer</strong>： 角色与Follower类似，但是无投票权</li>
+</ul>
+</li>
+<li><p>服务器状态</p>
+<ul>
+<li><p><strong>Looking</strong>：该状态表示集群中不存在群首节点，进入群首选举过程。</p>
+</li>
+<li><p><strong>Leading</strong>：群首状态，表示该服务器是群首节点。</p>
+</li>
+<li><p><strong>Following</strong>：跟随者状态，表示该服务器是群首的Follow节点。</p>
+<p><strong>注意</strong>：服务器默认是Looking状态</p>
+</li>
+</ul>
+</li>
+<li><p>节点的持久数据状态</p>
+<ul>
+<li><strong>history</strong>: 当前节点接收到的事务提议的log</li>
+<li><strong>acceptedEpoch</strong>：follower节点已经接受的leader更改年号的NEWEPOCH提议</li>
+<li><strong>currentEpoch</strong>：当前所处的年代</li>
+<li><strong>lastZxid</strong>：history中最近接收到的提议的zxid</li>
+</ul>
+</li>
+<li><p>术语解释</p>
+<ul>
+<li><p><strong>quorum</strong>：集群中超过半数的节点集合</p>
+</li>
+<li><p><strong>epoch</strong>：相当于Raft算法选主时候的term，可以理解为任期</p>
+</li>
+<li><p><strong>zxid</strong>：是Zookeeper中的数据对应的事务ID，为了保证事务的顺序一致性，zookeeper采用了递增的事务id号（zxid）来标识事务，所有的提议（proposal）都在被提出的时候加上了zxid，zxid是一个64位的数字，高32位是epoch用来标识leader关系是否改变，每次一个leader被选出来，它都会有一个新的epoch（原来的epoch+1)，低32位用于递增计数</p>
+<img src="/images/consensus-algorithm/image-20210828204920161-20210828204921.png" alt="image-20210828204920161" style="zoom:40%;" /></li>
+</ul>
+</li>
+<li><p>ZAB协议的四阶段</p>
+<ol>
+<li><p>Phase 0: Leader election（选举阶段）</p>
+<p>节点在一开始都处于选举阶段，只要有一个节点得到超半数节点的票数，它就可以当选准 leader。只有到达 Phase 3 准 leader 才会成为真正的 leader。这一阶段的目的是就是为了选出一个准 leader，然后进入下一个阶段</p>
+</li>
+<li><p>Phase 1: Discovery（发现阶段）</p>
+<p>这个阶段，followers 跟准 leader 进行通信，同步 followers 最近接收的事务提议。这个一阶段的主要目的是发现当前大多数节点接收的最新提议，并且准 leader 生成新的 epoch，让 followers 接受，更新它们的 acceptedEpoch</p>
+<p>一个 follower 只会连接一个 leader，如果有一个节点 f 认为另一个 follower p 是 leader，f 在尝试连接 p 时会被拒绝，f 被拒绝之后，就会进入 Phase 0</p>
+<p><img src="/images/consensus-algorithm/15473897584862.png" alt="img"></p>
+</li>
+<li><p>Phase 2: Synchronization（同步阶段）</p>
+<p>同步阶段主要是利用 leader 前一阶段获得的最新提议历史，同步集群中所有的副本。只有当 quorum 都同步完成，准 leader 才会成为真正的 leader。follower 只会接收 zxid 比自己的 lastZxid 大的提议</p>
+<p><img src="/images/consensus-algorithm/15473897747901.png" alt="img"></p>
+</li>
+<li><p>Phase 3: Broadcast（广播阶段）</p>
+<p>到了这个阶段，Zookeeper 集群才能正式对外提供事务服务，并且 leader 可以进行消息广播。同时如果有新的节点加入，还需要对新节点进行同步</p>
+<p>值得注意的是，ZAB 提交事务并不像 2PC 一样需要全部 follower 都 ACK，只需要得到 quorum （超过半数的节点）的 ACK 就可以了</p>
+<p><img src="/images/consensus-algorithm/15473897855814.png" alt="img"></p>
+</li>
+</ol>
+</li>
+<li><p>Java协议实现</p>
+<p>协议的 Java 版本实现跟上面的定义有些不同，选举阶段使用的是 Fast Leader Election（FLE），它包含了 Phase 1 的发现职责。因为 FLE 会选举拥有最新提议历史的节点作为 leader，这样就省去了发现最新提议的步骤。实际的实现将 Phase 1 和 Phase 2 合并为 Recovery Phase（恢复阶段）。所以，ZAB 的实现只有三个阶段：</p>
+<ul>
+<li>Fast Leader Election</li>
+<li>Recovery Phase</li>
+<li>Broadcast Phase</li>
+</ul>
+<ol>
+<li><p><strong>Fast Leader Election（FLE）</strong></p>
+<p>FLE 会选举拥有最新提议历史（lastZxid最大）的节点作为 leader，这样就省去了发现最新提议的步骤。这是基于拥有最新提议的节点也有最新提交记录的前提</p>
+<p>成为Leader条件：</p>
+<ul>
+<li>选epoch最大的</li>
+<li>如果epoch相等，zxid最大的</li>
+<li>如果epoch和zxid都相等，选server id最大（zoo.cfg中的myid）</li>
+</ul>
+<p>节点在选举开始都默认投票给自己，当接收其他节点的选票时，会根据上面的条件更改自己的选票并重新发送选票给其他节点，当有一个节点的得票超过半数，该节点会设置自己的状态为 leading，其他节点会设置自己的状态为 following</p>
+<p><img src="/images/consensus-algorithm/15473897991049.png" alt="img"></p>
+</li>
+<li><p><strong>Recovery Phase（恢复阶段）</strong></p>
+<ul>
+<li>peerLastZxid：这是 Follower 的最后处理 ZXID</li>
+<li>minCommittedLog：Leader 服务器的提议缓存队列中 （LinkedList<Proposal>）最小的 ZXID</li>
+<li>maxCommittedLog：Leader 服务器的提议缓存队列中 （LinkedList<Proposal>）最大的ZXID</li>
+</ul>
+<p>根据这三个参数，就可以确定四种同步方式，分别为：</p>
+<ul>
+<li>直接差异化同步（DIFF）<ul>
+<li>场景：当 minCommittedLog &lt; peerLastZxid &lt; maxCommittedLog 时</li>
+</ul>
+</li>
+<li>先回滚在差异化同步（TRUNC+DIFF）<ul>
+<li>场景：假如集群有 A、B、C 三台机器，此时 A 是 Leader 但是 A 挂了，在挂之前 A 生成了一个提议假设是：03，然后集群又重新选举 B 为新的 Leader，此时生成的的提议缓存队列为：01~02，B 和 C 进行同步之后，生成新的纪元，ZXID 从 10 开始计数，集群进入广播模式处理了部分请求，假设现在 ZXID 执行到 15 这个值，此时 A 恢复了加入集群，这时候就比较 A 最后提交的 ZXID：peerLastZxid 与 minCommittedLog、maxCommittedLog 的关系。此时虽然符合直接差异化同步：minCommittedLog &lt; peerLastZxid &lt; maxCommittedLog 这样的关系，但是提议缓存队列中却没有这个 ZXID ，这时候就需要先回滚，在进行同步。</li>
+</ul>
+</li>
+<li>仅回滚同步（TRUNC）<ul>
+<li>场景：这里和先回滚在差异化同步类似，直接回滚就可以。</li>
+</ul>
+</li>
+<li>全量同步（SNAP）<ul>
+<li>场景：peerLastZxid &lt; minCommittedLog，当远远落后 Leader 的数据时，直接全量同步</li>
+</ul>
+</li>
+</ul>
+<p><img src="/images/consensus-algorithm/15473898081005.png" alt="img"></p>
+</li>
+<li><p><strong>Broadcast Phase</strong></p>
+<p>ZooKeeper 的消息广播过程类似于两阶段提交，针对客户端的读写事务请求，Leader 会生成对应的事务提案，并为其分配 ZXID，随后将这条提案广播给集群中的其它节点。Follower 节点接收到该事务提案后，会先将其以事务日志的形式写入本地磁盘中，写入成功后会给 Leader 反馈一条 Ack 响应。当 Leader 收到超过半数 Follower 节点的 Ack 响应后，会回复客户端写操作成功，并向集群发送 Commit 消息，将该事务提交。Follower 服务器接收到 Commit 消息后，会完成事务的提交，将数据应用到数据副本中。</p>
+<p>在消息广播过程中，Leader 服务器会为每个 Follower 维护一个消息队列，然后将需要广播的提案依次放入队列中，并根据『先入先出』的规则逐一发送消息。因为只要超过半数节点响应就可以认为写操作成功，所以少数的慢节点不会影响整个集群的性能</p>
+</li>
+</ol>
+</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Zookeeper/" rel="tag"># Zookeeper</a>
+              <a href="/tags/paxos/" rel="tag"># paxos</a>
+              <a href="/tags/ZAB/" rel="tag"># ZAB</a>
+              <a href="/tags/Raft/" rel="tag"># Raft</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/01/04/zk-server2client/" rel="prev" title="Zookeeper -- 服务端与客户端网络通信源码分析">
+      <i class="fa fa-chevron-left"></i> Zookeeper -- 服务端与客户端网络通信源码分析
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2020/01/04/mysql-redo-binlog/" rel="next" title="MySQL -- redolog & binlog">
+      MySQL -- redolog & binlog <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%86%E5%B8%83%E5%BC%8F%E5%85%B1%E8%AF%86%E7%AE%97%E6%B3%95"><span class="nav-number">1.</span> <span class="nav-text">分布式共识算法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E5%B8%83%E5%BC%8F%E5%85%B1%E8%AF%86%EF%BC%88Consensus%EF%BC%89"><span class="nav-number">1.1.</span> <span class="nav-text">分布式共识（Consensus）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#FLP-Impossibility-%E7%90%86%E8%AE%BA"><span class="nav-number">1.2.</span> <span class="nav-text">FLP Impossibility 理论</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#CAP-%E7%90%86%E8%AE%BA"><span class="nav-number">1.3.</span> <span class="nav-text">CAP 理论</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#BASE-%E7%90%86%E8%AE%BA"><span class="nav-number">1.4.</span> <span class="nav-text">BASE 理论</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%9A%E5%89%AF%E6%9C%AC%E7%8A%B6%E6%80%81%E6%9C%BA%EF%BC%88Replicated-state-machines%EF%BC%89"><span class="nav-number">1.5.</span> <span class="nav-text">多副本状态机（Replicated state machines）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Paxos"><span class="nav-number">1.6.</span> <span class="nav-text">Paxos</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Paxos-Overview"><span class="nav-number">1.6.1.</span> <span class="nav-text">Paxos Overview</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Basic-Paxos"><span class="nav-number">1.6.2.</span> <span class="nav-text">Basic Paxos</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Multi-Paxos"><span class="nav-number">1.7.</span> <span class="nav-text">Multi Paxos</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ZAB%EF%BC%88ZooKeeper-Atomic-Broadcast%EF%BC%89"><span class="nav-number">1.8.</span> <span class="nav-text">ZAB（ZooKeeper Atomic Broadcast）</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="tlv"
+      src="/images/avatar.jpeg">
+  <p class="site-author-name" itemprop="name">tlv</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">tags</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 2015 – 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">tlv</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+<script src="/js/bookmark.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+  <script src="//cdn.jsdelivr.net/npm/quicklink@1/dist/quicklink.umd.js"></script>
+  <script>
+      window.addEventListener('load', () => {
+      quicklink({
+        timeout : 3000,
+        priority: true,
+        ignores : [uri => uri.includes('#'),uri => uri === 'http://example.com/2020/01/04/consensus-algorithm/',]
+      });
+      });
+  </script>
+
+</body>
+</html>

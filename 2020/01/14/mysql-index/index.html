@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"fancybox":true,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.json"};
+  </script>
+
+  <meta name="description" content="索引模型哈希表键 - 值（key-value）存储数据的结构，类似java的HashMap   哈希表这种结构适用于只有等值查询的场景，比如 Memcached 及其他一些 NoSQL 引擎 有序数组有序数组索引只适用于静态存储引擎，比如你要保存的是 2017 年某个城市的所有人口信息，这类不会再修改的数据   查找 等值查询：可以采用二分法，时间复杂度为O(log(N)) 范围查询：查找[ID_">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MySQL -- 索引">
+<meta property="og:url" content="http://example.com/2020/01/14/mysql-index/index.html">
+<meta property="og:site_name" content="温故而知新">
+<meta property="og:description" content="索引模型哈希表键 - 值（key-value）存储数据的结构，类似java的HashMap   哈希表这种结构适用于只有等值查询的场景，比如 Memcached 及其他一些 NoSQL 引擎 有序数组有序数组索引只适用于静态存储引擎，比如你要保存的是 2017 年某个城市的所有人口信息，这类不会再修改的数据   查找 等值查询：可以采用二分法，时间复杂度为O(log(N)) 范围查询：查找[ID_">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/images/mysql-index/0c62b601afda86fe5d0fe57346ace957.png">
+<meta property="og:image" content="http://example.com/images/mysql-index/bfc907a92f99cadf5493cf0afac9ca49.png">
+<meta property="og:image" content="http://example.com/images/mysql-index/04fb9d24065635a6a637c25ba9ddde68.png">
+<meta property="og:image" content="http://example.com/images/mysql-index/bc946b22c5275a1293f7be8902edb256.png">
+<meta property="og:image" content="http://example.com/images/mysql-index/dcda101051f28502bd5c4402b292e38d.png">
+<meta property="og:image" content="http://example.com/images/mysql-index/mysql-index-scan-row.png">
+<meta property="og:image" content="http://example.com/images/mysql-index/mysql-index-leftmost-prefix.jpg">
+<meta property="og:image" content="http://example.com/images/mysql-index/mysql-index-pushdown.jpg">
+<meta property="og:image" content="http://example.com/images/mysql-index/mysql-index-no-pushdown.jpg">
+<meta property="article:published_time" content="2020-01-14T16:00:00.000Z">
+<meta property="article:modified_time" content="2022-05-11T13:27:38.360Z">
+<meta property="article:author" content="tlv">
+<meta property="article:tag" content="Storage">
+<meta property="article:tag" content="MySQL">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/images/mysql-index/0c62b601afda86fe5d0fe57346ace957.png">
+
+<link rel="canonical" href="http://example.com/2020/01/14/mysql-index/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>MySQL -- 索引 | 温故而知新</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">温故而知新</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories<span class="badge">7</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives<span class="badge">8</span></a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2020/01/14/mysql-index/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpeg">
+      <meta itemprop="name" content="tlv">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="温故而知新">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          MySQL -- 索引
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2020-01-15 00:00:00" itemprop="dateCreated datePublished" datetime="2020-01-15T00:00:00+08:00">2020-01-15</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-05-11 21:27:38" itemprop="dateModified" datetime="2022-05-11T21:27:38+08:00">2022-05-11</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Storage/" itemprop="url" rel="index"><span itemprop="name">Storage</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Storage/MySQL/" itemprop="url" rel="index"><span itemprop="name">MySQL</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>4.2k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>4 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="索引模型"><a href="#索引模型" class="headerlink" title="索引模型"></a>索引模型</h2><h3 id="哈希表"><a href="#哈希表" class="headerlink" title="哈希表"></a>哈希表</h3><p>键 - 值（key-value）存储数据的结构，类似java的HashMap</p>
+<img src="/images/mysql-index/0c62b601afda86fe5d0fe57346ace957.png" alt="img" style="zoom:50%;" />
+
+<p><strong>哈希表这种结构适用于只有等值查询的场景，比如 Memcached 及其他一些 NoSQL 引擎</strong></p>
+<h3 id="有序数组"><a href="#有序数组" class="headerlink" title="有序数组"></a>有序数组</h3><p><strong>有序数组索引只适用于静态存储引擎</strong>，比如你要保存的是 2017 年某个城市的所有人口信息，这类不会再修改的数据</p>
+<img src="/images/mysql-index/bfc907a92f99cadf5493cf0afac9ca49.png" alt="img" style="zoom:50%;" />
+
+<h4 id="查找"><a href="#查找" class="headerlink" title="查找"></a>查找</h4><ol>
+<li>等值查询：可以采用<strong>二分法</strong>，时间复杂度为<code>O(log(N))</code></li>
+<li>范围查询：查找<code>[ID_card_X,ID_card_Y]</code><ul>
+<li>首先通过<strong>二分法</strong>找到第一个大于等于<code>ID_card_X</code>的记录</li>
+<li>然后向<strong>右</strong>遍历，直到找到第一个大于<code>ID_card_Y</code>的记录</li>
+</ul>
+</li>
+</ol>
+<h4 id="插入"><a href="#插入" class="headerlink" title="插入"></a>插入</h4><p>往中间插入一个记录就必须得挪动后面所有的记录，成本很高，所以只适用于存储静态数据</p>
+<h3 id="搜索树"><a href="#搜索树" class="headerlink" title="搜索树"></a>搜索树</h3><h4 id="平衡二叉树"><a href="#平衡二叉树" class="headerlink" title="平衡二叉树"></a>平衡二叉树</h4><p>查询的时间复杂度：<code>O(log(N))</code>，更新的时间复杂度：<code>O(log(N))</code>（维持树的<strong>平衡</strong>）</p>
+<img src="/images/mysql-index/04fb9d24065635a6a637c25ba9ddde68.png" alt="img" style="zoom:50%;" />
+
+<h2 id="InnoDB索引模型"><a href="#InnoDB索引模型" class="headerlink" title="InnoDB索引模型"></a>InnoDB索引模型</h2><p>使用B+树作为索引模型</p>
+<h3 id="B-树数据结构"><a href="#B-树数据结构" class="headerlink" title="B+树数据结构"></a><strong>B+树数据结构</strong></h3><ul>
+<li>B+树是 B 树的一种变形形式，B+树上的叶子结点存储关键字以及相应记录的地址，叶子结点以上各层作为索引使用</li>
+<li>一棵 m 阶的 B+树定义如下（<em><strong>B+树的阶数 m 表示一个节点最多能有 m 个子节点,也就是每个节点上最多有m-1的关键字</strong></em>）<ul>
+<li>每个结点至多有 m 个子节点</li>
+<li>除根结点外，每个结点至少有[m/2]个子节点，根结点至少有两个子节点</li>
+<li>有 k 个子节点的结点必有 k 个关键字</li>
+</ul>
+</li>
+<li>B+树的查找与 B 树不同，当索引部分某个结点的关键字与所查的关键字相等时，并不停止查找，应继续沿着这个关键字左边的指针向下，一直查到该关键字所在的叶子结点为止</li>
+</ul>
+<h3 id="MySQL-B-树索引有多少阶"><a href="#MySQL-B-树索引有多少阶" class="headerlink" title="MySQL B+树索引有多少阶"></a><strong>MySQL B+树索引有多少阶</strong></h3><ul>
+<li>对于这个问题,我们需要先了解下磁盘相关知识.<ul>
+<li>磁盘的最小存储单位是扇区(512 字节)</li>
+<li>磁盘的读取是以块为基本单位,一块大小为 8 个扇区,即 4kb</li>
+<li>B+树的每一个节点占用的空间就是一个mysql页大小</li>
+</ul>
+</li>
+</ul>
+   <img src="/images/mysql-index/bc946b22c5275a1293f7be8902edb256.png" alt="img" style="zoom:60%;" />
+
+<ul>
+<li>以 innodb 引擎的索引数据结构为例,它的存储单元为一页,每页大小默认为 16KB<ul>
+<li>假设每个节点中索引元素占 8 个字节,指针占用 6 个字节,那么每页可存(16*1024)/(8+6)=1170 个索引元素</li>
+<li>假设 B+树的高度为 3,一条数据大小为 1k,那么:第一层可以存 1170 个元素;第二层可以存 1170 * 1170=1368900 个元素;第三层属于叶子结点,可以存的数据条数为页大小 16KB / 每条数据大小 1KB,即 16 条,那么总共可以存储的数据条数即为 16*1368900=21902400</li>
+</ul>
+</li>
+</ul>
+<h3 id="MySQL-索引组织表"><a href="#MySQL-索引组织表" class="headerlink" title="MySQL 索引组织表"></a><strong>MySQL 索引组织表</strong></h3><p>   在 InnoDB 中，表都是根据<strong>主键顺序</strong>以索引的形式存放的，这种存储方式的表称为<strong>索引组织表</strong>，每一个<strong>索引</strong>在InnoDB里面都对应一棵<strong>B+树</strong></p>
+   <figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"># 建表</span><br><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> T(</span><br><span class="line">    id <span class="type">INT</span> <span class="keyword">PRIMARY</span> KEY,</span><br><span class="line">    k <span class="type">INT</span> <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    INDEX (k)</span><br><span class="line">) ENGINE<span class="operator">=</span>INNODB;</span><br><span class="line"></span><br><span class="line"># 初始化数据</span><br><span class="line">R1 : (<span class="number">100</span>,<span class="number">1</span>)</span><br><span class="line">R2 : (<span class="number">200</span>,<span class="number">2</span>)</span><br><span class="line">R3 : (<span class="number">300</span>,<span class="number">3</span>)</span><br><span class="line">R4 : (<span class="number">500</span>,<span class="number">5</span>)</span><br><span class="line">R5 : (<span class="number">600</span>,<span class="number">6</span>)</span><br></pre></td></tr></table></figure>
+
+   <img src="/images/mysql-index/dcda101051f28502bd5c4402b292e38d.png" alt="img" style="zoom:60%;" />
+
+<ol>
+<li>根据叶子节点的内容，索引类型分为聚簇索引（clustered index）和二级索引（secondary index）<ul>
+<li>聚簇索引的叶子节点存储的是<strong>整行数据</strong></li>
+<li>二级索引的叶子节点存储的是<strong>主键的值</strong></li>
+</ul>
+</li>
+<li><code>select * from T where ID=500</code>：只需要搜索ID树</li>
+<li><code>select * from T where k=5</code>：先搜索k树，得到ID的值为500，再到ID树搜索，该过程称为<em><strong>回表</strong></em></li>
+<li>基于二级索引的查询需要多扫描一棵索引树，因此<strong>尽量使用主键查询</strong></li>
+</ol>
+<h3 id="索引维护"><a href="#索引维护" class="headerlink" title="索引维护"></a><strong>索引维护</strong></h3><ol>
+<li>B+树为了维护<strong>索引的有序性</strong>，在插入新值时，需要做必要的维护</li>
+<li>如果新插入的行ID为700，只需要在R5的记录后插入一个新纪录</li>
+<li>如果新插入的行ID为400，需要逻辑上（实际采用链表的形式，直接追加）挪动R3后面的数据，空出位置<ul>
+<li>如果R5所在的数据页已经满了，根据B+树的算法，需要申请一个新的数据页，然后将部分数据挪过去，称为<em><strong>页分裂</strong></em></li>
+<li>页分裂的影响：<strong>性能</strong>、<strong>数据页的利用率</strong></li>
+</ul>
+</li>
+<li>页合并：页分裂的逆过程<ul>
+<li>当<strong>相邻</strong>两个页由于<strong>删除</strong>了数据，利用率很低之后，会将数据页合并</li>
+</ul>
+</li>
+</ol>
+<h3 id="索引重建"><a href="#索引重建" class="headerlink" title="索引重建"></a><strong>索引重建</strong></h3>   <figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"># 重建二级索引</span><br><span class="line"><span class="keyword">ALTER</span> <span class="keyword">TABLE</span> T <span class="keyword">DROP</span> INDEX k;</span><br><span class="line"><span class="keyword">ALTER</span> <span class="keyword">TABLE</span> T <span class="keyword">ADD</span> INDEX(k);</span><br><span class="line"></span><br><span class="line"># 重建聚簇索引</span><br><span class="line"><span class="keyword">ALTER</span> <span class="keyword">TABLE</span> T <span class="keyword">DROP</span> <span class="keyword">PRIMARY</span> KEY;</span><br><span class="line"><span class="keyword">ALTER</span> <span class="keyword">TABLE</span> T <span class="keyword">ADD</span> <span class="keyword">PRIMARY</span> KEY(id);</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>重建索引的原因<ul>
+<li>索引可能因为<strong>删除和页分裂</strong>等原因，导致<strong>数据页有空洞</strong></li>
+<li>重建索引的过程会<strong>创建一个新的索引</strong>，<strong>把数据按顺序插入</strong></li>
+<li>这样<strong>页面的利用率最高</strong>，使得索引更紧凑，更省空间</li>
+</ul>
+</li>
+<li>重建二级索引k是合理的，可以达到省空间的目的</li>
+<li>重建聚簇索引是不合理的<ul>
+<li>不论是<strong>删除聚簇索引</strong>还是<strong>创建聚簇索引</strong>，都会<strong>将整个表重建</strong></li>
+<li>替代语句：<code>ALTER TABLE T ENGINE=INNODB</code></li>
+</ul>
+</li>
+</ol>
+<h3 id="自增主键"><a href="#自增主键" class="headerlink" title="自增主键"></a><strong>自增主键</strong></h3><ol>
+<li>逻辑：如果主键为自增，并且在插入新纪录时不指定主键的值，系统会获取当前主键的最大值+1作为新纪录的主键<ul>
+<li>适用于<strong>递增插入</strong>的场景，每次插入一条新纪录都是<strong>追加操作</strong>，既不会涉及其他记录的挪动操作，也不会触发页分裂</li>
+</ul>
+</li>
+<li>如果采用<strong>业务字段</strong>作为主键，<strong>很难保证有序插入</strong>，写数据的成本相对较高</li>
+<li>主键长度越小，二级索引占用的空间也就越小<ul>
+<li>在一般情况下，创建一个自增主键，这样二级索引占用的空间最小</li>
+</ul>
+</li>
+<li>针对实际中一般采用分布式ID生成器的情况<ul>
+<li>满足<strong>有序插入</strong></li>
+<li>分布式ID<strong>全局唯一</strong></li>
+</ul>
+</li>
+<li>适合直接采用业务字段做主键的场景：KV场景（只有一个唯一索引）<ul>
+<li>无须考虑<strong>二级索引的占用空间问题</strong></li>
+<li>无须考虑<strong>二级索引的回表问题</strong></li>
+</ul>
+</li>
+</ol>
+<h2 id="索引优化"><a href="#索引优化" class="headerlink" title="索引优化"></a>索引优化</h2><h3 id="覆盖索引"><a href="#覆盖索引" class="headerlink" title="覆盖索引"></a>覆盖索引</h3><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"># 建表</span><br><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> T (</span><br><span class="line">    ID <span class="type">INT</span> <span class="keyword">PRIMARY</span> KEY,</span><br><span class="line">    k <span class="type">INT</span> <span class="keyword">NOT</span> <span class="keyword">NULL</span> <span class="keyword">DEFAULT</span> <span class="number">0</span>,</span><br><span class="line">    s <span class="type">VARCHAR</span>(<span class="number">16</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span> <span class="keyword">DEFAULT</span> <span class="string">&#x27;&#x27;</span>,</span><br><span class="line">    INDEX k(k)</span><br><span class="line">) ENGINE<span class="operator">=</span>INNODB;</span><br><span class="line"></span><br><span class="line"># 初始化数据</span><br><span class="line"><span class="keyword">INSERT</span> <span class="keyword">INTO</span> T <span class="keyword">VALUES</span> (<span class="number">100</span>,<span class="number">1</span>,<span class="string">&#x27;aa&#x27;</span>),(<span class="number">200</span>,<span class="number">2</span>,<span class="string">&#x27;bb&#x27;</span>),(<span class="number">300</span>,<span class="number">3</span>,<span class="string">&#x27;cc&#x27;</span>),(<span class="number">500</span>,<span class="number">5</span>,<span class="string">&#x27;ee&#x27;</span>),(<span class="number">600</span>,<span class="number">6</span>,<span class="string">&#x27;ff&#x27;</span>),(<span class="number">700</span>,<span class="number">7</span>,<span class="string">&#x27;gg&#x27;</span>);</span><br></pre></td></tr></table></figure>
+
+<img src="/images/mysql-index/mysql-index-scan-row.png" alt="img" style="zoom:45%;" />
+
+<h4 id="需要回表的查询"><a href="#需要回表的查询" class="headerlink" title="需要回表的查询"></a>需要回表的查询</h4><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> <span class="operator">*</span> <span class="keyword">FROM</span> T <span class="keyword">WHERE</span> k <span class="keyword">BETWEEN</span> <span class="number">3</span> <span class="keyword">AND</span> <span class="number">5</span></span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>在k树上找到k=3的记录，取得ID=300</li>
+<li>再到ID树上查找ID=300的记录，对应为R3</li>
+<li>在k树上取<strong>下一个</strong>值k=5，取得ID=500</li>
+<li>再到ID树上查找ID=500的记录，对应为R4</li>
+<li>在k树上取<strong>下一个</strong>值k=6，不满足条件，循环结束</li>
+</ol>
+<p>整个查询过程读了k树3条记录，回表了2次</p>
+<h4 id="不需要回表的查询"><a href="#不需要回表的查询" class="headerlink" title="不需要回表的查询"></a>不需要回表的查询</h4><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> ID <span class="keyword">FROM</span> T <span class="keyword">WHERE</span> k <span class="keyword">BETWEEN</span> <span class="number">3</span> <span class="keyword">AND</span> <span class="number">5</span></span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>只需要查ID的值，而ID的值已经在k树上，可以直接提供查询结果，不需要回表<ul>
+<li>因为k树已经覆盖了我们的查询需求，因此称为<strong>覆盖索引</strong></li>
+</ul>
+</li>
+<li>覆盖索引可以<strong>减少树的搜索次数</strong>，显著<strong>提升查询性能</strong>，因此使用覆盖索引是一个常用的性能优化手段</li>
+<li>扫描行数<ul>
+<li>在存储引擎内部使用覆盖索引在索引k上其实是读取了3个记录，</li>
+<li>但对于MySQL的<strong>Server层</strong>来说，存储引擎返回的只有2条记录，因此MySQL认为扫描行数为2</li>
+</ul>
+</li>
+</ol>
+<h4 id="联合索引"><a href="#联合索引" class="headerlink" title="联合索引"></a>联合索引</h4><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> `tuser` (</span><br><span class="line">    `id` <span class="type">INT</span>(<span class="number">11</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `id_card` <span class="type">VARCHAR</span>(<span class="number">32</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `name` <span class="type">VARCHAR</span>(<span class="number">32</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `age` <span class="type">INT</span>(<span class="number">11</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `ismale` TINYINT(<span class="number">1</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    <span class="keyword">PRIMARY</span> KEY (`id`),</span><br><span class="line">    KEY `id_card` (`id_card`),</span><br><span class="line">    KEY `name_age` (`name`,`age`)</span><br><span class="line">) ENGINE<span class="operator">=</span>InnoDB</span><br></pre></td></tr></table></figure>
+
+<p>高频请求：根据id_card查询name。可以建立联合索引<code>(id_card,name)</code>，达到<strong>覆盖索引</strong>的效果</p>
+<h3 id="最左前缀原则"><a href="#最左前缀原则" class="headerlink" title="最左前缀原则"></a>最左前缀原则</h3><p>B+树的索引结构，可以利用索引的<strong>最左前缀</strong>来定位记录</p>
+<img src="/images/mysql-index/mysql-index-leftmost-prefix.jpg" alt="img" style="zoom:45%;" />
+
+<ol>
+<li>索引项是按照索引定义里字段出现的顺序来排序的<ul>
+<li>如果查找所有名字为<strong>张三</strong>的人时，可以快速定位到ID4，然后<strong>向后遍历</strong>，直到不满足条件为止</li>
+<li>如果查找所有名字的第一个字是<strong>张</strong>的人，找到第一个符合条件的记录ID3，然后<strong>向后遍历</strong>，直到不满足条件为止</li>
+</ul>
+</li>
+<li>只要满足最左前缀，就可以利用索引来加速检索，最左前缀有2种情况<ul>
+<li><strong>联合索引的最左N个字段</strong></li>
+<li><strong>字符串索引的最左M个字符</strong></li>
+</ul>
+</li>
+<li>建立联合索引时，定义索引内字段顺序的原则<ul>
+<li><strong>复用</strong>：如果通过调整顺序，可以<strong>少维护一个索引</strong>，往往优先考虑这样的顺序</li>
+<li><strong>空间</strong>：维护<code>(name,age)</code>+<code>age</code>比维护<code>(age,name)</code>+<code>name</code>所占用的空间更少</li>
+</ul>
+</li>
+</ol>
+<h3 id="索引下推"><a href="#索引下推" class="headerlink" title="索引下推"></a>索引下推</h3><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> <span class="operator">*</span> <span class="keyword">FROM</span> tuser <span class="keyword">WHERE</span> name <span class="keyword">LIKE</span> <span class="string">&#x27;张%&#x27;</span> <span class="keyword">AND</span> age<span class="operator">=</span><span class="number">10</span> <span class="keyword">AND</span> ismale<span class="operator">=</span><span class="number">1</span>;</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>依据<strong>最左前缀</strong>原则，上面的查询语句只能用<strong>张</strong>，找到第一个满足条件的记录ID3（优于全表扫描）</li>
+<li>然后判断其他条件是否满足<ul>
+<li>在MySQL 5.6之前，只能从ID3开始一个个回表，到聚簇索引上找出对应的数据行，再对比字段值<ul>
+<li>这里暂时忽略<strong>MRR</strong>：在不影响排序结果的情况下，在取出主键后，回表之前，会对所有获取到的主键进行排序</li>
+</ul>
+</li>
+<li>在MySQL 5.6引入了下推优化（index condition pushdown）<ul>
+<li>可以在<strong>索引遍历</strong>过程中，<strong>对索引所包含的字段先做判断</strong>，<strong>直接过滤掉不满足条件的记录</strong>，<strong>减少回表次数</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<p>无索引下推，回表4次</p>
+<img src="/images/mysql-index/mysql-index-pushdown.jpg" alt="img" style="zoom:45%;" />
+
+<p>采用索引下推，回表2次</p>
+<img src="/images/mysql-index/mysql-index-no-pushdown.jpg" alt="img" style="zoom:45%;" />
+
+<h3 id="删除冗余索引"><a href="#删除冗余索引" class="headerlink" title="删除冗余索引"></a>删除冗余索引</h3><figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> `geek` (</span><br><span class="line">    `a` <span class="type">int</span>(<span class="number">11</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `b` <span class="type">int</span>(<span class="number">11</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `c` <span class="type">int</span>(<span class="number">11</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    `d` <span class="type">int</span>(<span class="number">11</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    <span class="keyword">PRIMARY</span> KEY (`a`,`b`),</span><br><span class="line">    KEY `c` (`c`),</span><br><span class="line">    KEY `ca` (`c`,`a`),</span><br><span class="line">    KEY `cb` (`c`,`b`)</span><br><span class="line">) ENGINE<span class="operator">=</span>InnoDB;</span><br><span class="line"></span><br><span class="line"># 索引(`a`,`b`)是业务属性</span><br><span class="line"># 常规查询，应该如何优化索引？</span><br><span class="line"><span class="keyword">select</span> <span class="operator">*</span> <span class="keyword">from</span> geek <span class="keyword">where</span> c<span class="operator">=</span>N <span class="keyword">order</span> <span class="keyword">by</span> a limit <span class="number">1</span>;</span><br><span class="line"><span class="keyword">select</span> <span class="operator">*</span> <span class="keyword">from</span> geek <span class="keyword">where</span> c<span class="operator">=</span>N <span class="keyword">order</span> <span class="keyword">by</span> b limit <span class="number">1</span>;</span><br></pre></td></tr></table></figure>
+<p>索引<code>ca</code>是不需要的，因为满足<strong>最左前缀</strong>原则，<code>ca(b) = c(ab)</code></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>《MySQL实战45讲》<br><a target="_blank" rel="noopener" href="http://zhongmingmao.me/2019/01/21/mysql-index/">http://zhongmingmao.me/2019/01/21/mysql-index/</a></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Storage/" rel="tag"># Storage</a>
+              <a href="/tags/MySQL/" rel="tag"># MySQL</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/01/09/mysql-transaction-isolation/" rel="prev" title="MySQL -- 事务隔离">
+      <i class="fa fa-chevron-left"></i> MySQL -- 事务隔离
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2020/01/19/mysql-lock/" rel="next" title="MySQL -- 锁">
+      MySQL -- 锁 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%B4%A2%E5%BC%95%E6%A8%A1%E5%9E%8B"><span class="nav-number">1.</span> <span class="nav-text">索引模型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%93%88%E5%B8%8C%E8%A1%A8"><span class="nav-number">1.1.</span> <span class="nav-text">哈希表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%89%E5%BA%8F%E6%95%B0%E7%BB%84"><span class="nav-number">1.2.</span> <span class="nav-text">有序数组</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%9F%A5%E6%89%BE"><span class="nav-number">1.2.1.</span> <span class="nav-text">查找</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%8F%92%E5%85%A5"><span class="nav-number">1.2.2.</span> <span class="nav-text">插入</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%90%9C%E7%B4%A2%E6%A0%91"><span class="nav-number">1.3.</span> <span class="nav-text">搜索树</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%B9%B3%E8%A1%A1%E4%BA%8C%E5%8F%89%E6%A0%91"><span class="nav-number">1.3.1.</span> <span class="nav-text">平衡二叉树</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#InnoDB%E7%B4%A2%E5%BC%95%E6%A8%A1%E5%9E%8B"><span class="nav-number">2.</span> <span class="nav-text">InnoDB索引模型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#B-%E6%A0%91%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">2.1.</span> <span class="nav-text">B+树数据结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MySQL-B-%E6%A0%91%E7%B4%A2%E5%BC%95%E6%9C%89%E5%A4%9A%E5%B0%91%E9%98%B6"><span class="nav-number">2.2.</span> <span class="nav-text">MySQL B+树索引有多少阶</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MySQL-%E7%B4%A2%E5%BC%95%E7%BB%84%E7%BB%87%E8%A1%A8"><span class="nav-number">2.3.</span> <span class="nav-text">MySQL 索引组织表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%B4%A2%E5%BC%95%E7%BB%B4%E6%8A%A4"><span class="nav-number">2.4.</span> <span class="nav-text">索引维护</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%B4%A2%E5%BC%95%E9%87%8D%E5%BB%BA"><span class="nav-number">2.5.</span> <span class="nav-text">索引重建</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%87%AA%E5%A2%9E%E4%B8%BB%E9%94%AE"><span class="nav-number">2.6.</span> <span class="nav-text">自增主键</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%B4%A2%E5%BC%95%E4%BC%98%E5%8C%96"><span class="nav-number">3.</span> <span class="nav-text">索引优化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A6%86%E7%9B%96%E7%B4%A2%E5%BC%95"><span class="nav-number">3.1.</span> <span class="nav-text">覆盖索引</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%9C%80%E8%A6%81%E5%9B%9E%E8%A1%A8%E7%9A%84%E6%9F%A5%E8%AF%A2"><span class="nav-number">3.1.1.</span> <span class="nav-text">需要回表的查询</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%8D%E9%9C%80%E8%A6%81%E5%9B%9E%E8%A1%A8%E7%9A%84%E6%9F%A5%E8%AF%A2"><span class="nav-number">3.1.2.</span> <span class="nav-text">不需要回表的查询</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%81%94%E5%90%88%E7%B4%A2%E5%BC%95"><span class="nav-number">3.1.3.</span> <span class="nav-text">联合索引</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%80%E5%B7%A6%E5%89%8D%E7%BC%80%E5%8E%9F%E5%88%99"><span class="nav-number">3.2.</span> <span class="nav-text">最左前缀原则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%B4%A2%E5%BC%95%E4%B8%8B%E6%8E%A8"><span class="nav-number">3.3.</span> <span class="nav-text">索引下推</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A0%E9%99%A4%E5%86%97%E4%BD%99%E7%B4%A2%E5%BC%95"><span class="nav-number">3.4.</span> <span class="nav-text">删除冗余索引</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">4.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="tlv"
+      src="/images/avatar.jpeg">
+  <p class="site-author-name" itemprop="name">tlv</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">tags</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 2015 – 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">tlv</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+<script src="/js/bookmark.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+  <script src="//cdn.jsdelivr.net/npm/quicklink@1/dist/quicklink.umd.js"></script>
+  <script>
+      window.addEventListener('load', () => {
+      quicklink({
+        timeout : 3000,
+        priority: true,
+        ignores : [uri => uri.includes('#'),uri => uri === 'http://example.com/2020/01/14/mysql-index/',]
+      });
+      });
+  </script>
+
+</body>
+</html>
